@@ -21,73 +21,73 @@ export class StaticAnalyzer {
 
   private registerBuiltins() {
     // Register some common built-ins for better analysis
-    this.globalScope.define('println', AviatorType.Void);
-    this.globalScope.define('print', AviatorType.Void);
-    this.globalScope.define('p', AviatorType.Void);
+    this.globalScope.define('println', AviatorType.Any);
+    this.globalScope.define('print', AviatorType.Any);
+    this.globalScope.define('p', AviatorType.Any);
     this.globalScope.define('sysdate', AviatorType.Any); // Returns Date object (Java Date)
-    this.globalScope.define('now', AviatorType.Long);
-    this.globalScope.define('rand', AviatorType.Double); // or Long if args
-    this.globalScope.define('cmp', AviatorType.Long);
+    this.globalScope.define('now', AviatorType.Any);
+    this.globalScope.define('rand', AviatorType.Any); // or Long if args
+    this.globalScope.define('cmp', AviatorType.Any);
     
     // Type casting/checking
-    this.globalScope.define('long', AviatorType.Long);
-    this.globalScope.define('double', AviatorType.Double);
-    this.globalScope.define('boolean', AviatorType.Boolean);
-    this.globalScope.define('str', AviatorType.String);
+    this.globalScope.define('long', AviatorType.Any);
+    this.globalScope.define('double', AviatorType.Any);
+    this.globalScope.define('boolean', AviatorType.Any);
+    this.globalScope.define('str', AviatorType.Any);
     this.globalScope.define('identity', AviatorType.Any);
-    this.globalScope.define('type', AviatorType.String);
-    this.globalScope.define('is_def', AviatorType.Boolean);
+    this.globalScope.define('type', AviatorType.Any);
+    this.globalScope.define('is_def', AviatorType.Any);
 
     // Collections
-    this.globalScope.define('range', AviatorType.List);
-    this.globalScope.define('tuple', AviatorType.List); // Aviator tuple is array?
+    this.globalScope.define('range', AviatorType.Any);
+    this.globalScope.define('tuple', AviatorType.Any); // Aviator tuple is array?
     this.globalScope.define('max', AviatorType.Any);
     this.globalScope.define('min', AviatorType.Any);
-    this.globalScope.define('count', AviatorType.Long);
-    this.globalScope.define('is_empty', AviatorType.Boolean);
-    this.globalScope.define('map', AviatorType.List); // map function returns list
-    this.globalScope.define('filter', AviatorType.List);
+    this.globalScope.define('count', AviatorType.Any);
+    this.globalScope.define('is_empty', AviatorType.Any);
+    this.globalScope.define('map', AviatorType.Any); // map function returns list
+    this.globalScope.define('filter', AviatorType.Any);
     this.globalScope.define('reduce', AviatorType.Any);
-    this.globalScope.define('include', AviatorType.Boolean);
-    this.globalScope.define('sort', AviatorType.List);
-    this.globalScope.define('reverse', AviatorType.List);
+    this.globalScope.define('include', AviatorType.Any);
+    this.globalScope.define('sort', AviatorType.Any);
+    this.globalScope.define('reverse', AviatorType.Any);
 
     // seq.*
-    this.globalScope.define('seq.list', AviatorType.List);
-    this.globalScope.define('seq.set', AviatorType.Set);
-    this.globalScope.define('seq.map', AviatorType.Map);
+    this.globalScope.define('seq.list', AviatorType.Any);
+    this.globalScope.define('seq.set', AviatorType.Any);
+    this.globalScope.define('seq.map', AviatorType.Any);
     this.globalScope.define('seq.add', AviatorType.Any); // returns collection
     this.globalScope.define('seq.get', AviatorType.Any);
-    this.globalScope.define('seq.contains_key', AviatorType.Boolean);
+    this.globalScope.define('seq.contains_key', AviatorType.Any);
     this.globalScope.define('seq.remove', AviatorType.Any); // returns collection
 
     // string.*
-    this.globalScope.define('string.contains', AviatorType.Boolean);
-    this.globalScope.define('string.length', AviatorType.Long);
-    this.globalScope.define('string.startsWith', AviatorType.Boolean);
-    this.globalScope.define('string.endsWith', AviatorType.Boolean);
-    this.globalScope.define('string.substring', AviatorType.String);
-    this.globalScope.define('string.indexOf', AviatorType.Long);
-    this.globalScope.define('string.split', AviatorType.List); // array of strings
-    this.globalScope.define('string.join', AviatorType.String);
-    this.globalScope.define('string.replace_first', AviatorType.String);
-    this.globalScope.define('string.replace_all', AviatorType.String);
+    this.globalScope.define('string.contains', AviatorType.Any);
+    this.globalScope.define('string.length', AviatorType.Any);
+    this.globalScope.define('string.startsWith', AviatorType.Any);
+    this.globalScope.define('string.endsWith', AviatorType.Any);
+    this.globalScope.define('string.substring', AviatorType.Any);
+    this.globalScope.define('string.indexOf', AviatorType.Any);
+    this.globalScope.define('string.split', AviatorType.Any); // array of strings
+    this.globalScope.define('string.join', AviatorType.Any);
+    this.globalScope.define('string.replace_first', AviatorType.Any);
+    this.globalScope.define('string.replace_all', AviatorType.Any);
 
     // math.*
     this.globalScope.define('math.abs', AviatorType.Any);
-    this.globalScope.define('math.round', AviatorType.Long);
-    this.globalScope.define('math.floor', AviatorType.Double); // JS returns number
-    this.globalScope.define('math.ceil', AviatorType.Double);
-    this.globalScope.define('math.sqrt', AviatorType.Double);
-    this.globalScope.define('math.pow', AviatorType.Double);
-    this.globalScope.define('math.log', AviatorType.Double);
-    this.globalScope.define('math.log10', AviatorType.Double);
-    this.globalScope.define('math.sin', AviatorType.Double);
-    this.globalScope.define('math.cos', AviatorType.Double);
-    this.globalScope.define('math.tan', AviatorType.Double);
-    this.globalScope.define('math.atan', AviatorType.Double);
-    this.globalScope.define('math.acos', AviatorType.Double);
-    this.globalScope.define('math.asin', AviatorType.Double);
+    this.globalScope.define('math.round', AviatorType.Any);
+    this.globalScope.define('math.floor', AviatorType.Any); // JS returns number
+    this.globalScope.define('math.ceil', AviatorType.Any);
+    this.globalScope.define('math.sqrt', AviatorType.Any);
+    this.globalScope.define('math.pow', AviatorType.Any);
+    this.globalScope.define('math.log', AviatorType.Any);
+    this.globalScope.define('math.log10', AviatorType.Any);
+    this.globalScope.define('math.sin', AviatorType.Any);
+    this.globalScope.define('math.cos', AviatorType.Any);
+    this.globalScope.define('math.tan', AviatorType.Any);
+    this.globalScope.define('math.atan', AviatorType.Any);
+    this.globalScope.define('math.acos', AviatorType.Any);
+    this.globalScope.define('math.asin', AviatorType.Any);
     this.globalScope.define('Math_max', AviatorType.Any);
     this.globalScope.define('Math_min', AviatorType.Any);
 
