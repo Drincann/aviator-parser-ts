@@ -73,5 +73,14 @@ describe('Static Analyzer', () => {
         assert.strictEqual(diagnostics.length, 1);
         assert.match(diagnostics[0].message, /Undefined variable 'b'/);
     });
+
+    // let a = math.abs(1, 2);
+    it('Should detect builtin function calls', () => {
+        const analyzer = new StaticAnalyzer();
+        const code = `let a = math.abs(1, 2);`;
+        
+        const diagnostics = analyzer.analyze(code);
+        assert.strictEqual(diagnostics.length, 0);
+    });
 });
 

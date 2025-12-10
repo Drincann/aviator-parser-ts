@@ -1,10 +1,10 @@
 import { AviatorLexer } from './lexer';
-import { Token, TokenType } from './token';
+import { Token, TokenType, ParseError } from './token';
 import { BindingPower } from './binding_power';
 import { Expr, Node, Leaf, FunctionCall, LambdaFunction } from './ast';
 import {
     Stmt, ExprStmt, LetStmt, IfStmt, WhileStmt, ForStmt,
-    FnStmt, ReturnStmt, BreakStmt, ContinueStmt, BlockStmt
+    FnStmt, ReturnStmt, BreakStmt, ContinueStmt, BlockStmt, TryStmt, ThrowStmt
 } from './statement';
 
 export class ScriptParser {
@@ -50,6 +50,12 @@ export class ScriptParser {
         }
         if (this.checkToken(TokenType.FN)) {
             return this.fnStatement();
+        }
+        if (this.checkToken(TokenType.TRY)) {
+            return this.tryStatement();
+        }
+        if (this.matchToken(TokenType.THROW)) {
+            return this.throwStatement();
         }
         if (this.matchToken(TokenType.RETURN)) {
             return this.returnStatement();
@@ -151,6 +157,28 @@ export class ScriptParser {
         return new FnStmt(name, params, body);
     }
 
+    private tryStatement(): Stmt {
+        this.advance(); // consume 'try'
+        const tryBlock = this.block();
+        
+        let catchVar: Token | null = null;
+        let catchBlock: Stmt[] | null = null;
+        let finallyBlock: Stmt[] | null = null;
+
+        if (this.matchToken(TokenType.CATCH)) {
+            this.consumeToken(TokenType.LEFT_PAREN, "Expect '(' after catch");
+            catchVar = this.consumeToken(TokenType.IDENTIFIER, "Expect catch variable name");
+            this.consumeToken(TokenType.RIGHT_PAREN, "Expect ')' after catch variable");
+            catchBlock = this.block();
+        }
+
+        if (this.matchToken(TokenType.FINALLY)) {
+            finallyBlock = this.block();
+        }
+
+        return new TryStmt(tryBlock, catchVar, catchBlock, finallyBlock);
+    }
+
     private returnStatement(): Stmt {
         let value: Expr | null = null;
         if (!this.checkToken(TokenType.SEMICOLON) && !this.checkToken(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
@@ -158,6 +186,12 @@ export class ScriptParser {
         }
         this.consumeSemicolon();
         return new ReturnStmt(value);
+    }
+
+    private throwStatement(): Stmt {
+        const value = this.expression();
+        this.consumeSemicolon();
+        return new ThrowStmt(value);
     }
 
     private expressionStatement(): Stmt {
@@ -243,7 +277,7 @@ export class ScriptParser {
             return this.lambda();
         }
 
-        throw new Error("Unexpected primary token: " + this.current());
+        throw new ParseError("Unexpected primary token: " + this.peek(), this.peek());
     }
 
     private prefixExpr(): Node {
@@ -387,7 +421,8 @@ export class ScriptParser {
     private eatToken(type: TokenType): void {
         this.advance();
         if (!this.currentIs(type)) {
-            throw new Error(`Expect ${type} but got: ${this.current()}`);
+            const token = this.current();
+            throw new ParseError(`Expect ${type} but got: ${token}`, token);
         }
     }
 
@@ -415,7 +450,10 @@ export class ScriptParser {
             this.advance();
             return this.current();
         }
-        throw new Error(`${message}. Got: ${this.peek()}`);
+        // Improve error message with line number
+        const token = this.peek();
+        const errorMessage = `${message}. Got: ${token}`;
+        throw new ParseError(errorMessage, token);
     }
 
     private consumeSemicolon(): void {

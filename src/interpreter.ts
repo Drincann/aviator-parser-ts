@@ -66,8 +66,13 @@ export class Interpreter {
         return lastValue;
     }
 
-    public executeBlock(statements: Stmt[]): any {
+    public executeBlock(statements: Stmt[], extraVariables?: Record<string, any>): any {
         return this.withNewScope(() => {
+            if (extraVariables) {
+                for (const [key, value] of Object.entries(extraVariables)) {
+                    this.define(key, value);
+                }
+            }
             return this.executeStatements(statements);
         });
     }

@@ -192,3 +192,39 @@ export class BlockStmt implements Stmt {
         return interpreter.executeBlock(this.statements);
     }
 }
+
+// Throw statement: throw expr
+export class ThrowStmt implements Stmt {
+    constructor(public value: Expr) {}
+    execute(interpreter: any): any {
+        const exception = interpreter.evaluate(this.value);
+        throw exception;
+    }
+}
+export class TryStmt implements Stmt {
+    constructor(
+        public tryBlock: Stmt[],
+        public catchVar: Token | null,
+        public catchBlock: Stmt[] | null,
+        public finallyBlock: Stmt[] | null
+    ) {}
+
+    execute(interpreter: any): any {
+        try {
+            return interpreter.executeBlock(this.tryBlock);
+        } catch (e: any) {
+            if (this.catchBlock) {
+                const catchEnv: Record<string, any> = {};
+                if (this.catchVar) {
+                    catchEnv[this.catchVar.lexeme] = e;
+                }
+                return interpreter.executeBlock(this.catchBlock, catchEnv);
+            }
+        } finally {
+            if (this.finallyBlock) {
+                interpreter.executeBlock(this.finallyBlock);
+            }
+        }
+        return null;
+    }
+}

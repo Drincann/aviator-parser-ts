@@ -1,7 +1,7 @@
 import {
   Expr, Node, Leaf, FunctionCall, LambdaFunction,
 } from '../ast';
-import { Token, TokenType } from '../token';
+import { Token, TokenType, ParseError } from '../token';
 import { ScriptParser } from '../script_parser';
 import { AviatorType, Diagnostic, DiagnosticSeverity, TypeEnv } from './types';
 import { SymbolTable } from './symbol_table';
@@ -130,7 +130,25 @@ export class StaticAnalyzer {
 
     } catch (e: any) {
       // Catch syntax errors from Parser
-      this.addError(e.message, 0); // Line 0 as fallback if parser doesn't give location in standard way
+      // Parser error messages might contain line info, but if not, we default to 0
+      
+      let line = 0;
+      if (e instanceof ParseError && e.token && e.token.line) {
+          line = e.token.line;
+      } else if (e.token && e.token.line) {
+          // Fallback for duck typing if instance check fails (e.g. version mismatch)
+          line = e.token.line;
+      } else {
+          // Try to regex extract line number from message "line=X" or "at line X" as last resort
+          const match = e.message.match(/(?:line[=:]\s?|at\s+)(\d+)/);
+          if (match) {
+              line = parseInt(match[1]);
+          } else if (e.line) {
+              line = e.line;
+          }
+      }
+      
+      this.addError(e.message, line); 
     }
     return this.diagnostics;
   }
@@ -223,6 +241,24 @@ export class StaticAnalyzer {
         this.analyzeBlock(stmt.body, fnScope);
         break;
       }
+      case 'TryStmt': {
+        this.analyzeBlock(stmt.tryBlock, scope.createChild());
+        if (stmt.catchBlock) {
+          const catchScope = scope.createChild();
+          if (stmt.catchVar) {
+            catchScope.define(stmt.catchVar.lexeme, AviatorType.Any); // Exception type
+          }
+          this.analyzeBlock(stmt.catchBlock, catchScope);
+        }
+        if (stmt.finallyBlock) {
+          this.analyzeBlock(stmt.finallyBlock, scope.createChild());
+        }
+        break;
+      }
+      case 'ThrowStmt': {
+        this.analyzeExpr(stmt.value, scope);
+        break;
+      }
       // Ignore Break/Continue for type checking currently
     }
   }
@@ -239,6 +275,11 @@ export class StaticAnalyzer {
     if (expr instanceof FunctionCall) {
       // Check function existence
       const funcType = this.analyzeExpr(expr.func, scope);
+      if(funcType !== AviatorType.Any) {
+        this.addError(`Function '${(expr.func as Leaf)?.token?.lexeme ?? 'unknown'}' is not defined`, this.getLine(expr.func));
+        return AviatorType.Any;
+      }
+
       // Analyze args
       for (const arg of expr.args) {
         this.analyzeExpr(arg, scope);
@@ -308,6 +349,24 @@ export class StaticAnalyzer {
     if (node.operands.length === 2) {
       const leftNode = node.operands[0];
       const rightNode = node.operands[1];
+
+      // Special case: Object access (math.abs, seq.get, etc.)
+      // For object access like math.abs, we should check if the full identifier exists first
+      if (op.type === TokenType.DOT) {
+        const fullIdentifier = this.buildFullNameIfLeaf(node);
+        if (fullIdentifier) {
+          const type = scope.resolve(fullIdentifier);
+          if (type) {
+            // Found the full identifier (e.g., "math.abs"), return its type
+            return type;
+          }
+        }
+        // If full identifier not found, analyze left and right separately
+        // This allows for dynamic object access like obj.prop
+        this.analyzeExpr(leftNode, scope);
+        this.analyzeExpr(rightNode, scope);
+        return AviatorType.Any; // Object property access returns Any
+      }
 
       // Special case: Assignment
       // c = 1
@@ -437,5 +496,20 @@ export class StaticAnalyzer {
     // Fallback
     return 0;
   }
-}
 
+  private buildFullNameIfLeaf(node: Expr): string | null {
+    if (node instanceof Leaf) {
+      return node.token.lexeme;
+    }
+
+    if (node instanceof Node && node.operator.type === TokenType.DOT) {
+      const left = this.buildFullNameIfLeaf(node.operands[0]);
+      const right = this.buildFullNameIfLeaf(node.operands[1]);
+      if (left && right) {
+        return left + '.' + right;
+      }
+    }
+
+    return null;
+  }
+}
