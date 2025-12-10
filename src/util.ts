@@ -52,6 +52,23 @@ export class LexerUtil {
         return (ch >= 97 && ch <= 122) || (ch >= 65 && ch <= 90);
         // a-z, A-Z
     }
+
+    // String processing utilities
+    public static processStringContent(content: string): string {
+        // Handle escape sequences
+        let result = content.replace(/\\(.)/g, (match, char) => {
+            switch (char) {
+                case 'n': return '\n';
+                case 'r': return '\r';
+                case 't': return '\t';
+                case '\\': return '\\';
+                case '"': return '"';
+                case "'": return "'";
+                default: return match;
+            }
+        });
+        return result;
+    }
 }
 
 export class ScopedSet<T> {

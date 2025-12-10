@@ -8,3 +8,8 @@ export * from './executor';
 export * from './interpreter';
 export * from './runtime';
 export * from './statement';
+export * from './script_parser';
+export * from './script';
+export * from './analyzer/types';
+export * from './analyzer/symbol_table';
+export * from './analyzer/analyzer';

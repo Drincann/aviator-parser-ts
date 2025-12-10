@@ -9,13 +9,21 @@ export class ControlFlowSignal {
 // Base interface for statements
 export interface Stmt {
     execute(interpreter: any): any;
+    hasSemicolon?: boolean; // Track if statement ends with semicolon
 }
 
 // Expression statement (an expression used as a statement)
 export class ExprStmt implements Stmt {
-    constructor(public expr: Expr) {}
+    public hasSemicolon: boolean = false;
+    
+    constructor(public expr: Expr, hasSemicolon: boolean = false) {
+        this.hasSemicolon = hasSemicolon;
+    }
+    
     execute(interpreter: any): any {
-        return interpreter.evaluate(this.expr);
+        const result = interpreter.evaluate(this.expr);
+        // If has semicolon, return nil (unless it's an assignment which already returns value)
+        return this.hasSemicolon ? null : result;
     }
 }
 
@@ -61,27 +69,18 @@ export class WhileStmt implements Stmt {
     execute(interpreter: any): any {
         let lastValue: any = null;
         while (interpreter.evaluate(this.condition)) {
-            try {
-                lastValue = interpreter.executeBlock(this.body);
-                if (lastValue instanceof ControlFlowSignal) {
-                    if (lastValue.type === 'break') {
-                        return null; // break returns nil
-                    }
-                    if (lastValue.type === 'continue') {
-                        lastValue = null;
-                        continue;
-                    }
-                    if (lastValue.type === 'return') {
-                        return lastValue; // propagate return
-                    }
+            lastValue = interpreter.executeBlock(this.body);
+            if (lastValue instanceof ControlFlowSignal) {
+                if (lastValue.type === 'break') {
+                    return null; // break returns nil
                 }
-            } catch (signal: any) {
-                if (signal instanceof ControlFlowSignal) {
-                    if (signal.type === 'break') return null;
-                    if (signal.type === 'continue') continue;
-                    if (signal.type === 'return') return signal;
+                if (lastValue.type === 'continue') {
+                    lastValue = null;
+                    continue;
                 }
-                throw signal;
+                if (lastValue.type === 'return') {
+                    return lastValue; // propagate return
+                }
             }
         }
         return lastValue;
@@ -99,8 +98,8 @@ export class ForStmt implements Stmt {
 
     execute(interpreter: any): any {
         const seq = interpreter.evaluate(this.iterable);
-        if (!seq || typeof seq[Symbol.iterator] !== 'function') {
-            throw new Error(`Expression is not iterable: ${this.iterable}`);
+        if (!seq) {
+            throw new Error(`Expression is null: ${this.iterable}`);
         }
 
         let lastValue: any = null;
@@ -109,53 +108,41 @@ export class ForStmt implements Stmt {
         // Handle Map iteration
         if (seq instanceof Map) {
             for (const [key, value] of seq) {
-                interpreter.define(this.itemVar.lexeme, this.indexVar ? { key, value } : { key, value });
                 if (this.indexVar) {
                     interpreter.define(this.indexVar.lexeme, key);
+                    interpreter.define(this.itemVar.lexeme, value);
+                } else {
+                    interpreter.define(this.itemVar.lexeme, { key, value });
                 }
-                try {
-                    lastValue = interpreter.executeBlock(this.body);
-                    if (lastValue instanceof ControlFlowSignal) {
-                        if (lastValue.type === 'break') return null;
-                        if (lastValue.type === 'continue') { lastValue = null; continue; }
-                        if (lastValue.type === 'return') return lastValue;
-                    }
-                } catch (signal: any) {
-                    if (signal instanceof ControlFlowSignal) {
-                        if (signal.type === 'break') return null;
-                        if (signal.type === 'continue') continue;
-                        if (signal.type === 'return') return signal;
-                    }
-                    throw signal;
+                
+                lastValue = interpreter.executeBlock(this.body);
+                if (lastValue instanceof ControlFlowSignal) {
+                    if (lastValue.type === 'break') return null;
+                    if (lastValue.type === 'continue') { lastValue = null; continue; }
+                    if (lastValue.type === 'return') return lastValue;
                 }
                 index++;
             }
-        } else {
-            // Arrays, Sets, Lists
+        } else if (typeof seq[Symbol.iterator] === 'function') {
+            // Arrays, Sets, Lists, etc.
             for (const item of seq) {
                 if (this.indexVar) {
                     interpreter.define(this.indexVar.lexeme, index);
                 }
                 interpreter.define(this.itemVar.lexeme, item);
                 
-                try {
-                    lastValue = interpreter.executeBlock(this.body);
-                    if (lastValue instanceof ControlFlowSignal) {
-                        if (lastValue.type === 'break') return null;
-                        if (lastValue.type === 'continue') { lastValue = null; continue; }
-                        if (lastValue.type === 'return') return lastValue;
-                    }
-                } catch (signal: any) {
-                    if (signal instanceof ControlFlowSignal) {
-                        if (signal.type === 'break') return null;
-                        if (signal.type === 'continue') continue;
-                        if (signal.type === 'return') return signal;
-                    }
-                    throw signal;
+                lastValue = interpreter.executeBlock(this.body);
+                if (lastValue instanceof ControlFlowSignal) {
+                    if (lastValue.type === 'break') return null;
+                    if (lastValue.type === 'continue') { lastValue = null; continue; }
+                    if (lastValue.type === 'return') return lastValue;
                 }
                 index++;
             }
+        } else {
+            throw new Error(`Expression is not iterable: ${this.iterable}`);
         }
+        
         return lastValue;
     }
 }
@@ -205,4 +192,3 @@ export class BlockStmt implements Stmt {
         return interpreter.executeBlock(this.statements);
     }
 }
-

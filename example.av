@@ -1,0 +1,52 @@
+## Calculate factorial
+fn factorial(n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+println("factorial(10) = " + factorial(10));
+
+## FizzBuzz
+println("\nFizzBuzz 1-20:");
+for i in range(1, 21) {
+    if (i % 15 == 0) {
+        println("FizzBuzz");
+    } elsif (i % 3 == 0) {
+        println("Fizz");
+    } elsif (i % 5 == 0) {
+        println("Buzz");
+    } else {
+        println(i);
+    }
+}
+
+## Closures and higher-order functions
+fn makeCounter(start) {
+    let count = start;
+    let inc = lambda() -> count = count + 1 end;
+    return inc;
+}
+
+let counter = makeCounter(0);
+println("\nCounter demo:");
+println("counter() = " + counter());
+println("counter() = " + counter());
+println("counter() = " + counter());
+
+## Array processing
+let numbers = seq.list(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+let evens = filter(numbers, lambda(x) -> x % 2 == 0 end);
+let sum = reduce(evens, lambda(acc, x) -> acc + x end, 0);
+
+println("\nArray processing:");
+println("numbers: " + numbers);
+println("evens: " + evens);
+println("sum of evens: " + sum);
+
+## String interpolation
+let name = "AviatorScript";
+let version = "1.0";
+println("\n#{name} v#{version} - Powered by TypeScript");
+

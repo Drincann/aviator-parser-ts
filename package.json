@@ -1,22 +1,26 @@
 {
   "name": "aviator-parser",
-  "version": "0.2.3",
-  "main": "dist/index.js",
+  "version": "0.3.0",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
   "exports": {
     "require": {
-      "types": "./src/index.ts",
+      "types": "./dist/cjs/index.d.ts",
       "default": "./dist/cjs/index.js"
     },
     "import": {
-      "types": "./src/index.ts",
+      "types": "./dist/esm/index.d.ts",
       "default": "./dist/esm/index.js"
     }
   },
   "scripts": {
     "test": "node --import=tsx --test ./test/*.test.ts",
-    "build": "npm run build:esm && npm run build:cjs",
+    "build": "rm -rf dist && npm run build:esm && npm run build:cjs && echo '{\"type\": \"commonjs\"}' > dist/cjs/package.json && echo '{\"type\": \"module\"}' > dist/esm/package.json",
     "build:esm": "tsc -p tsconfig.esm.json",
-    "build:cjs": "tsc -p tsconfig.cjs.json"
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "cli": "npx tsx cli-dev.ts",
+    "repl": "npx tsx cli-dev.ts"
   },
   "keywords": [
     "aviator"
@@ -34,6 +38,7 @@
   "type": "module",
   "description": "",
   "devDependencies": {
+    "@types/node": "^24.10.2",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4"
   }

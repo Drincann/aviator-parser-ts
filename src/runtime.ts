@@ -11,7 +11,13 @@ export class DefaultAviatorRuntime implements ExpressionRuntime {
         // System Functions
         'print': (outOrObj: any, obj?: any) => {
             const val = obj === undefined ? outOrObj : obj;
-            process.stdout.write(String(val));
+            // Use console.log without newline if available (Node.js), otherwise fallback
+            const proc = (globalThis as any).process;
+            if (proc && proc.stdout) {
+                proc.stdout.write(String(val));
+            } else {
+                console.log(val);
+            }
         },
         'println': (outOrObj: any, obj?: any) => {
             const val = obj === undefined ? outOrObj : obj;

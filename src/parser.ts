@@ -4,17 +4,30 @@ import { BindingPower } from './binding_power';
 import { Expr, Node, Leaf, FunctionCall, LambdaFunction } from './ast';
 
 export class Pratt {
-    private lexer: AviatorLexer;
+    private lexer: AviatorLexer | null = null;
     private token: Token | null = null;
     private lookahead: Token | null = null;
     private result: Expr | null = null;
+    private externalTokenProvider: (() => Token) | null = null;
 
-    constructor(lexer: AviatorLexer) {
-        this.lexer = lexer;
+    constructor(lexerOrProvider?: AviatorLexer | (() => Token)) {
+        if (lexerOrProvider instanceof AviatorLexer) {
+            this.lexer = lexerOrProvider;
+        } else if (typeof lexerOrProvider === 'function') {
+            this.externalTokenProvider = lexerOrProvider;
+        }
     }
 
     public static parse(code: string): Expr {
         return new Pratt(new AviatorLexer(code)).parse();
+    }
+
+    // Parse expression from current position (used by ScriptParser)
+    public parseExpression(): Expr {
+        if (!this.token) {
+            this.next();
+        }
+        return this.expr(0);
     }
 
     public parse(): Expr {
@@ -155,7 +168,6 @@ export class Pratt {
 
     private functionCall(left: Expr): Expr {
         const args: Expr[] = [];
-        // Check for immediate closing paren first
         if (this.peekType(TokenType.RIGHT_PAREN)) {
             this.eat(TokenType.RIGHT_PAREN);
             return new FunctionCall(left, args);
@@ -166,8 +178,6 @@ export class Pratt {
             if (this.peekType(TokenType.RIGHT_PAREN)) {
                 break;
             }
-            // If not closing paren, expect COMMA.
-            // If we hit EOF or something else, it will throw in next iteration or next eat.
             this.eat(TokenType.COMMA);
         }
         this.eat(TokenType.RIGHT_PAREN);
@@ -203,7 +213,13 @@ export class Pratt {
 
     private next(): Token {
         this.token = this.lookahead;
-        this.lookahead = this.lexer.next();
+        if (this.externalTokenProvider) {
+            this.lookahead = this.externalTokenProvider();
+        } else if (this.lexer) {
+            this.lookahead = this.lexer.next();
+        } else {
+            throw new Error("No token provider available");
+        }
         return this.token!;
     }
 
@@ -212,15 +228,14 @@ export class Pratt {
     }
 
     private peekType(type: TokenType): boolean {
-        if (!this.peek()) return type === TokenType.EOF; // If peek is null/undefined, it's effectively EOF? No, lookahead initialized.
+        if (!this.peek()) return type === TokenType.EOF;
         return this.peek().type === type;
     }
 
     private eat(type: TokenType): void {
         this.next();
         if (!this.tokenIs(type)) {
-            // Special handling for EOF/Error reporting
             throw new Error(`Expect ${type} but got: ${this.getToken()}`);
         }
-    }
+  }
 }

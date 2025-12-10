@@ -1,8 +1,25 @@
 import { Expr, Leaf, Node, FunctionCall, LambdaFunction } from './ast';
 import { TokenType, Token } from './token';
+import { Stmt, ControlFlowSignal } from './statement';
+import { LexerUtil } from './util';
+import { Pratt } from './parser';
+
+interface Scope {
+    parent: Scope | null;
+    variables: Map<string, any>;
+}
 
 export class Interpreter {
-    constructor(private context: Record<string, any> = {}) {}
+    private globalScope: Scope;
+    private currentScope: Scope;
+
+    constructor(context: Record<string, any> = {}) {
+        this.globalScope = {
+            parent: null,
+            variables: new Map(Object.entries(context))
+        };
+        this.currentScope = this.globalScope;
+    }
 
     public evaluate(expr: Expr): any {
         if (expr instanceof Leaf) {
@@ -20,13 +37,87 @@ export class Interpreter {
         throw new Error(`Unknown expression type: ${expr}`);
     }
 
+    public define(name: string, value: any): void {
+        this.currentScope.variables.set(name, value);
+    }
+
+    public assign(name: string, value: any): void {
+        let scope: Scope | null = this.currentScope;
+        while (scope) {
+            if (scope.variables.has(name)) {
+                scope.variables.set(name, value);
+                return;
+            }
+            scope = scope.parent;
+        }
+        // If not found, define in current scope (AviatorScript behavior)
+        this.currentScope.variables.set(name, value);
+    }
+
+    public executeStatements(statements: Stmt[]): any {
+        let lastValue: any = null;
+        for (let i = 0; i < statements.length; i++) {
+            const stmt = statements[i];
+            lastValue = stmt.execute(this);
+            if (lastValue instanceof ControlFlowSignal) {
+                return lastValue; // Propagate control flow
+            }
+        }
+        return lastValue;
+    }
+
+    public executeBlock(statements: Stmt[]): any {
+        return this.withNewScope(() => {
+            return this.executeStatements(statements);
+        });
+    }
+
+    public createFunction(params: Token[], body: Stmt[]): Function {
+        const closureScope = this.currentScope;
+        
+        return (...args: any[]) => {
+            return this.withNewScope(() => {
+                // Bind parameters
+                params.forEach((param, i) => {
+                    this.define(param.lexeme, args[i]);
+                });
+                
+                const result = this.executeStatements(body);
+                if (result instanceof ControlFlowSignal && result.type === 'return') {
+                    return result.value;
+                }
+                return result;
+            }, closureScope);
+        };
+    }
+
+    private withNewScope<T>(fn: () => T, parentScope?: Scope): T {
+        const previousScope = this.currentScope;
+        this.currentScope = {
+            parent: parentScope || previousScope,
+            variables: new Map()
+        };
+        try {
+            return fn();
+        } finally {
+            this.currentScope = previousScope;
+        }
+    }
+
     private evaluateLeaf(leaf: Leaf): any {
         const token = leaf.token;
         switch (token.type) {
             case TokenType.NUMBER:
+                // Support N (BigInt) and M (Decimal) suffixes
+                if (token.lexeme.endsWith('N')) {
+                    return BigInt(token.lexeme.slice(0, -1));
+                }
+                if (token.lexeme.endsWith('M')) {
+                    return Number(token.lexeme.slice(0, -1));
+                }
                 return Number(token.lexeme);
             case TokenType.STRING:
-                return token.lexeme.substring(1, token.lexeme.length - 1);
+                return this.processString(token.lexeme);
             case TokenType.TRUE:
                 return true;
             case TokenType.FALSE:
@@ -44,9 +135,35 @@ export class Interpreter {
         }
     }
 
+    private processString(lexeme: string): string {
+        // Remove quotes
+        const quote = lexeme[0];
+        let str = lexeme.substring(1, lexeme.length - 1);
+        
+        // First handle escape sequences
+        str = LexerUtil.processStringContent(str);
+        
+        // Then handle string interpolation #{expr}
+        str = str.replace(/#\{([^}]+)\}/g, (match, exprCode) => {
+            try {
+                // Parse and evaluate the expression
+                const result = this.evaluate(Pratt.parse(exprCode));
+                return String(result);
+            } catch (e) {
+                return match; // If error, keep original
+            }
+        });
+        
+        return str;
+    }
+
     private resolveIdentifier(name: string): any {
-        if (Object.prototype.hasOwnProperty.call(this.context, name)) {
-            return this.context[name];
+        let scope: Scope | null = this.currentScope;
+        while (scope) {
+            if (scope.variables.has(name)) {
+                return scope.variables.get(name);
+            }
+            scope = scope.parent;
         }
         return undefined;
     }
@@ -68,20 +185,16 @@ export class Interpreter {
 
         // Binary
         if (operands.length === 2) {
-            // Handle Assignment specially
             if (op.type === TokenType.ASSIGN) {
                 return this.handleAssignment(operands[0], operands[1]);
             }
 
-            // Handle Dot Access (property access) as an expression first
             if (op.type === TokenType.DOT) {
                  const left = this.evaluate(operands[0]);
                  if (left && typeof left === 'object') {
                     if (operands[1] instanceof Leaf && operands[1].token.type === TokenType.IDENTIFIER) {
                          return left[operands[1].token.lexeme];
                     }
-                    // If right side is not an identifier, it's invalid dot syntax for Aviator usually, 
-                    // but Parser allows it.
                 }
                 return undefined;
             }
@@ -152,7 +265,7 @@ export class Interpreter {
         const right = this.evaluate(rightExpr);
 
         if (leftExpr instanceof Leaf && leftExpr.token.type === TokenType.IDENTIFIER) {
-            this.context[leftExpr.token.lexeme] = right;
+            this.assign(leftExpr.token.lexeme, right);
             return right;
         }
 
@@ -178,52 +291,25 @@ export class Interpreter {
     }
 
     private evaluateFunctionCall(call: FunctionCall): any {
-        // Function call: funcName(args...) or (lambda)(args...) or obj.method(args...)
-        // In Parser, functionCall(left). left is the function expression.
-        
-        // Special Case: obj.method() is parsed as Node(DOT, obj, method).
-        // But function call precedence binds stronger than dot?
-        // Parser: postfixExpr -> LEFT_PAREN handles functionCall(left).
-        // If we have `a.b()`.
-        // 1. primary 'a'
-        // 2. infix DOT 'b'. left = Node(DOT, a, b).
-        // 3. postfix PAREN. functionCall(left).
-        // So call.func is Node(DOT, a, b).
-        // If we evaluate Node(DOT, a, b) normally, it returns property value `a.b`.
-        // If `a.b` is a function in context (or JS method), it works.
-        // BUT, for `string.length('s')` in Aviator, `string.length` is a function name in namespace?
-        // OR `string` is a namespace map and `length` is a function in it?
-        // In `DefaultAviatorRuntime`, we registered 'string.length' as a single key.
-        // Lexer parses `string.length` as: IDENTIFIER(string) DOT IDENTIFIER(length).
-        // So `string.length` is parsed as Node(DOT, string, length).
-        // Interpreter.evaluate(Node(DOT...)) tries to look up property `length` on object `string`.
-        // `string` identifier resolves to undefined (unless we injected it).
-        // `DefaultAviatorRuntime` injects flat keys like 'string.length'.
-        // So we need to handle "Namespace Resolution" or flatten identifier lookup for functions.
-        
         let func: any;
-        let thisContext: any = null; // for method calls if needed
 
-        // Try to handle "namespaced function" pattern: a.b.c() where "a.b.c" is a registered function name.
         const flatName = this.flattenName(call.func);
         if (flatName) {
             func = this.resolveIdentifier(flatName);
         }
 
         if (!func) {
-            // Fallback to normal evaluation
-            func = this.evaluate(call.func);
+             func = this.evaluate(call.func);
         }
         
         const args = call.args.map(arg => this.evaluate(arg));
 
         if (typeof func === 'function') {
-            return func.apply(thisContext, args);
+            return func.apply(null, args);
         }
         throw new Error(`Expression is not a function: ${call.func}`);
     }
 
-    // Helper to reconstruct "a.b.c" from AST if it's a chain of DOTs and IDENTIFIERS
     private flattenName(expr: Expr): string | null {
         if (expr instanceof Leaf && expr.token.type === TokenType.IDENTIFIER) {
             return expr.token.lexeme;
@@ -240,15 +326,15 @@ export class Interpreter {
 
     private evaluateLambda(lambda: LambdaFunction): any {
         const params = lambda.parameters.map(p => p.token.lexeme);
-        const closureContext = { ...this.context };
+        const closureScope = this.currentScope;
 
         return (...args: any[]) => {
-            const localContext = { ...closureContext };
-            params.forEach((name, index) => {
-                localContext[name] = args[index];
-            });
-            const interpreter = new Interpreter(localContext);
-            return interpreter.evaluate(lambda.body);
+            return this.withNewScope(() => {
+                params.forEach((name, index) => {
+                    this.define(name, args[index]);
+                });
+                return this.evaluate(lambda.body);
+            }, closureScope);
         };
     }
 }

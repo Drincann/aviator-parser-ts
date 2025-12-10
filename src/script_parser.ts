@@ -1,7 +1,7 @@
 import { AviatorLexer } from './lexer';
 import { Token, TokenType } from './token';
-import { Pratt } from './parser';
-import { Expr } from './ast';
+import { BindingPower } from './binding_power';
+import { Expr, Node, Leaf, FunctionCall, LambdaFunction } from './ast';
 import {
     Stmt, ExprStmt, LetStmt, IfStmt, WhileStmt, ForStmt,
     FnStmt, ReturnStmt, BreakStmt, ContinueStmt, BlockStmt
@@ -9,60 +9,60 @@ import {
 
 export class ScriptParser {
     private lexer: AviatorLexer;
-    private current: Token;
-    private exprParser: Pratt;
+    private token: Token | null = null;
+    private lookahead: Token | null = null;
 
     constructor(code: string) {
         this.lexer = new AviatorLexer(code);
-        this.exprParser = new Pratt(this.lexer);
-        this.current = this.lexer.next();
+        this.advance(); // Initialize token and lookahead
+    }
+
+    public static parse(code: string): Stmt[] {
+        return new ScriptParser(code).parse();
     }
 
     public parse(): Stmt[] {
         const statements: Stmt[] = [];
         while (!this.isAtEnd()) {
+            // Skip leading semicolons
+            while (this.matchToken(TokenType.SEMICOLON)) {
+                // consumed
+            }
+            if (this.isAtEnd()) break;
+            
             statements.push(this.statement());
         }
         return statements;
     }
 
     private statement(): Stmt {
-        // Skip semicolons
-        while (this.match(TokenType.SEMICOLON)) {
-            // consumed
-        }
-
-        if (this.isAtEnd()) {
-            throw new Error("Unexpected end of script");
-        }
-
-        if (this.match(TokenType.LET)) {
+        if (this.matchToken(TokenType.LET)) {
             return this.letStatement();
         }
-        if (this.check(TokenType.IF)) {
+        if (this.checkToken(TokenType.IF)) {
             return this.ifStatement();
         }
-        if (this.check(TokenType.WHILE)) {
+        if (this.checkToken(TokenType.WHILE)) {
             return this.whileStatement();
         }
-        if (this.check(TokenType.FOR)) {
+        if (this.checkToken(TokenType.FOR)) {
             return this.forStatement();
         }
-        if (this.check(TokenType.FN)) {
+        if (this.checkToken(TokenType.FN)) {
             return this.fnStatement();
         }
-        if (this.match(TokenType.RETURN)) {
+        if (this.matchToken(TokenType.RETURN)) {
             return this.returnStatement();
         }
-        if (this.match(TokenType.BREAK)) {
+        if (this.matchToken(TokenType.BREAK)) {
             this.consumeSemicolon();
             return new BreakStmt();
         }
-        if (this.match(TokenType.CONTINUE)) {
+        if (this.matchToken(TokenType.CONTINUE)) {
             this.consumeSemicolon();
             return new ContinueStmt();
         }
-        if (this.check(TokenType.LEFT_BRACE)) {
+        if (this.checkToken(TokenType.LEFT_BRACE)) {
             return new BlockStmt(this.block());
         }
 
@@ -71,8 +71,8 @@ export class ScriptParser {
     }
 
     private letStatement(): Stmt {
-        const name = this.consume(TokenType.IDENTIFIER, "Expect variable name after 'let'");
-        this.consume(TokenType.ASSIGN, "Expect '=' after variable name");
+        const name = this.consumeToken(TokenType.IDENTIFIER, "Expect variable name after 'let'");
+        this.consumeToken(TokenType.ASSIGN, "Expect '=' after variable name");
         const initializer = this.expression();
         this.consumeSemicolon();
         return new LetStmt(name, initializer);
@@ -80,23 +80,23 @@ export class ScriptParser {
 
     private ifStatement(): Stmt {
         this.advance(); // consume 'if'
-        this.consumeOptional(TokenType.LEFT_PAREN); // optional (
+        this.matchToken(TokenType.LEFT_PAREN); // optional
         const condition = this.expression();
-        this.consumeOptional(TokenType.RIGHT_PAREN); // optional )
+        this.matchToken(TokenType.RIGHT_PAREN); // optional
         
         const thenBranch = this.block();
         const elsifBranches: Array<{ condition: Expr, body: Stmt[] }> = [];
         let elseBranch: Stmt[] | null = null;
 
-        while (this.match(TokenType.ELSE_IF)) {
-            this.consumeOptional(TokenType.LEFT_PAREN);
+        while (this.matchToken(TokenType.ELSE_IF)) {
+            this.matchToken(TokenType.LEFT_PAREN);
             const elsifCond = this.expression();
-            this.consumeOptional(TokenType.RIGHT_PAREN);
+            this.matchToken(TokenType.RIGHT_PAREN);
             const elsifBody = this.block();
             elsifBranches.push({ condition: elsifCond, body: elsifBody });
         }
 
-        if (this.match(TokenType.ELSE)) {
+        if (this.matchToken(TokenType.ELSE)) {
             elseBranch = this.block();
         }
 
@@ -105,9 +105,9 @@ export class ScriptParser {
 
     private whileStatement(): Stmt {
         this.advance(); // consume 'while'
-        this.consumeOptional(TokenType.LEFT_PAREN);
+        this.matchToken(TokenType.LEFT_PAREN);
         const condition = this.expression();
-        this.consumeOptional(TokenType.RIGHT_PAREN);
+        this.matchToken(TokenType.RIGHT_PAREN);
         const body = this.block();
         return new WhileStmt(condition, body);
     }
@@ -115,19 +115,18 @@ export class ScriptParser {
     private forStatement(): Stmt {
         this.advance(); // consume 'for'
         
-        // for index, item in seq OR for item in seq
-        const first = this.consume(TokenType.IDENTIFIER, "Expect variable name in for loop");
+        const first = this.consumeToken(TokenType.IDENTIFIER, "Expect variable name in for loop");
         let indexVar: Token | null = null;
         let itemVar: Token;
 
-        if (this.match(TokenType.COMMA)) {
+        if (this.matchToken(TokenType.COMMA)) {
             indexVar = first;
-            itemVar = this.consume(TokenType.IDENTIFIER, "Expect item variable after comma");
+            itemVar = this.consumeToken(TokenType.IDENTIFIER, "Expect item variable after comma");
         } else {
             itemVar = first;
         }
 
-        this.consume(TokenType.IN, "Expect 'in' in for loop");
+        this.consumeToken(TokenType.IN, "Expect 'in' in for loop");
         const iterable = this.expression();
         const body = this.block();
         
@@ -136,17 +135,17 @@ export class ScriptParser {
 
     private fnStatement(): Stmt {
         this.advance(); // consume 'fn'
-        const name = this.consume(TokenType.IDENTIFIER, "Expect function name");
-        this.consume(TokenType.LEFT_PAREN, "Expect '(' after function name");
+        const name = this.consumeToken(TokenType.IDENTIFIER, "Expect function name");
+        this.consumeToken(TokenType.LEFT_PAREN, "Expect '(' after function name");
         
         const params: Token[] = [];
-        if (!this.check(TokenType.RIGHT_PAREN)) {
+        if (!this.checkToken(TokenType.RIGHT_PAREN)) {
             do {
-                params.push(this.consume(TokenType.IDENTIFIER, "Expect parameter name"));
-            } while (this.match(TokenType.COMMA));
+                params.push(this.consumeToken(TokenType.IDENTIFIER, "Expect parameter name"));
+            } while (this.matchToken(TokenType.COMMA));
         }
         
-        this.consume(TokenType.RIGHT_PAREN, "Expect ')' after parameters");
+        this.consumeToken(TokenType.RIGHT_PAREN, "Expect ')' after parameters");
         const body = this.block();
         
         return new FnStmt(name, params, body);
@@ -154,7 +153,7 @@ export class ScriptParser {
 
     private returnStatement(): Stmt {
         let value: Expr | null = null;
-        if (!this.check(TokenType.SEMICOLON) && !this.isAtEnd()) {
+        if (!this.checkToken(TokenType.SEMICOLON) && !this.checkToken(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
             value = this.expression();
         }
         this.consumeSemicolon();
@@ -163,30 +162,238 @@ export class ScriptParser {
 
     private expressionStatement(): Stmt {
         const expr = this.expression();
+        const hasSemi = this.checkToken(TokenType.SEMICOLON);
         this.consumeSemicolon();
-        return new ExprStmt(expr);
+        return new ExprStmt(expr, hasSemi);
     }
 
     private block(): Stmt[] {
-        this.consume(TokenType.LEFT_BRACE, "Expect '{'");
+        this.consumeToken(TokenType.LEFT_BRACE, "Expect '{'");
         const statements: Stmt[] = [];
         
-        while (!this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+        while (!this.checkToken(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+            while (this.matchToken(TokenType.SEMICOLON)) {
+                // Skip
+            }
+            if (this.checkToken(TokenType.RIGHT_BRACE)) break;
+            
             statements.push(this.statement());
         }
         
-        this.consume(TokenType.RIGHT_BRACE, "Expect '}'");
+        this.consumeToken(TokenType.RIGHT_BRACE, "Expect '}'");
         return statements;
     }
 
+    // ========== Expression Parsing (Pratt-based) ==========
+    
     private expression(): Expr {
-        // Use Pratt parser for expressions
-        return this.exprParser.parseExpression();
+        return this.expr(0);
     }
 
-    private match(...types: TokenType[]): boolean {
+    private expr(ubp: number): Expr {
+        let left = this.primary();
+
+        while (true) {
+            if (this.peekType(TokenType.EOF) || this.peekType(TokenType.SEMICOLON) || this.peekType(TokenType.RIGHT_BRACE)) {
+                break;
+            }
+
+            const op = this.peek();
+
+            if (BindingPower.isInfix(op)) {
+                const lbp = BindingPower.infixLeft(op);
+                if (lbp < ubp) {
+                    break;
+                }
+
+                left = this.infixExpr(left, op);
+                continue;
+            }
+
+            if (BindingPower.isPostfix(op)) {
+                const rbp = BindingPower.postfix(op);
+                if (rbp < ubp) {
+                    break;
+                }
+
+                left = this.postfixExpr(left, op);
+                continue;
+            }
+
+            break;
+        }
+
+        return left;
+    }
+
+    private primary(): Expr {
+        if (this.peekType(TokenType.LEFT_PAREN)) {
+            return this.subExpr();
+        }
+
+        if (this.peekLeaf()) {
+            return this.leaf();
+        }
+
+        if (this.peekUnary()) {
+            return this.prefixExpr();
+        }
+
+        if (this.peekType(TokenType.LAMBDA)) {
+            return this.lambda();
+        }
+
+        throw new Error("Unexpected primary token: " + this.current());
+    }
+
+    private prefixExpr(): Node {
+        this.advance();
+        const op = this.current();
+        const right = this.expr(BindingPower.prefix(this.current()));
+        return new Node(op, right);
+    }
+
+    private infixExpr(left: Expr, op: Token): Expr {
+        this.advance();
+        if (this.currentIs(TokenType.CONDITIONAL)) {
+            return this.conditional(left, op);
+        }
+
+        return new Node(op, left, this.expr(BindingPower.infixRight(op)));
+    }
+
+    private postfixExpr(left: Expr, op: Token): Expr {
+        this.advance();
+        if (this.currentIs(TokenType.LEFT_BRACKET)) {
+            left = this.objectAccess(left, op);
+        }
+
+        if (this.currentIs(TokenType.LEFT_PAREN)) {
+            left = this.functionCall(left);
+        }
+
+        return left;
+    }
+
+    private subExpr(): Expr {
+        this.eatToken(TokenType.LEFT_PAREN);
+        const expr = this.expr(0);
+        this.eatToken(TokenType.RIGHT_PAREN);
+        return expr;
+    }
+
+    private leaf(): Leaf {
+        this.advance();
+        return new Leaf(this.current());
+    }
+
+    private lambda(): LambdaFunction {
+        this.eatToken(TokenType.LAMBDA);
+        this.eatToken(TokenType.LEFT_PAREN);
+        const parameters: Token[] = [];
+        
+        // Check if empty parameter list
+        if (!this.peekType(TokenType.RIGHT_PAREN)) {
+            while (true) {
+                this.advance();
+                parameters.push(this.current());
+                if (this.peekType(TokenType.RIGHT_PAREN)) {
+                    break;
+                }
+                this.eatToken(TokenType.COMMA);
+            }
+        }
+        
+        this.eatToken(TokenType.RIGHT_PAREN);
+        this.eatToken(TokenType.ARROW);
+        const body = this.expr(0);
+        this.eatToken(TokenType.END);
+        return new LambdaFunction(parameters, body);
+    }
+
+    private conditional(left: Expr, op: Token): Expr {
+        const thenExpr = this.expr(0);
+        this.eatToken(TokenType.COLON);
+        const elseExpr = this.expr(BindingPower.infixRight(op));
+        return new Node(op, left, thenExpr, elseExpr);
+    }
+
+    private objectAccess(left: Expr, op: Token): Expr {
+        const subexpr = this.expr(0);
+        this.eatToken(TokenType.RIGHT_BRACKET);
+        return new Node(op, left, subexpr);
+    }
+
+    private functionCall(left: Expr): Expr {
+        const args: Expr[] = [];
+        if (this.peekType(TokenType.RIGHT_PAREN)) {
+            this.eatToken(TokenType.RIGHT_PAREN);
+            return new FunctionCall(left, args);
+        }
+        
+        while (true) {
+            args.push(this.expr(0));
+            if (this.peekType(TokenType.RIGHT_PAREN)) {
+                break;
+            }
+            this.eatToken(TokenType.COMMA);
+        }
+        this.eatToken(TokenType.RIGHT_PAREN);
+        return new FunctionCall(left, args);
+    }
+
+    // ========== Token Utilities ==========
+
+    private currentIs(type: TokenType): boolean {
+        return this.current().type === type;
+    }
+
+    private peekUnary(): boolean {
+        return this.peekType(TokenType.SUBTRACT) || 
+               this.peekType(TokenType.LOGIC_NOT) || 
+               this.peekType(TokenType.BIT_NOT);
+    }
+
+    private peekLeaf(): boolean {
+        return this.peekType(TokenType.NUMBER) || 
+               this.peekType(TokenType.IDENTIFIER) || 
+               this.peekType(TokenType.STRING) || 
+               this.peekType(TokenType.TRUE) || 
+               this.peekType(TokenType.FALSE) || 
+               this.peekType(TokenType.NIL) || 
+               this.peekType(TokenType.REGEX);
+    }
+
+    private advance(): Token {
+        this.token = this.lookahead;
+        this.lookahead = this.lexer.next();
+        return this.token!;
+    }
+
+    private current(): Token {
+        if (!this.token) throw new Error("Token not initialized");
+        return this.token;
+    }
+
+    private peek(): Token {
+        if (!this.lookahead) throw new Error("Lookahead not initialized");
+        return this.lookahead;
+    }
+
+    private peekType(type: TokenType): boolean {
+        return this.peek().type === type;
+    }
+
+    private eatToken(type: TokenType): void {
+        this.advance();
+        if (!this.currentIs(type)) {
+            throw new Error(`Expect ${type} but got: ${this.current()}`);
+        }
+    }
+
+    private matchToken(...types: TokenType[]): boolean {
         for (const type of types) {
-            if (this.check(type)) {
+            if (this.checkToken(type)) {
                 this.advance();
                 return true;
             }
@@ -194,45 +401,27 @@ export class ScriptParser {
         return false;
     }
 
-    private check(type: TokenType): boolean {
+    private checkToken(type: TokenType): boolean {
         if (this.isAtEnd()) return false;
-        return this.current.type === type;
-    }
-
-    private advance(): Token {
-        if (!this.isAtEnd()) {
-            const prev = this.current;
-            this.current = this.lexer.next();
-            return prev;
-        }
-        return this.current;
+        return this.peek().type === type;
     }
 
     private isAtEnd(): boolean {
-        return this.current.type === TokenType.EOF;
+        return this.peek().type === TokenType.EOF;
     }
 
-    private consume(type: TokenType, message: string): Token {
-        if (this.check(type)) return this.advance();
-        throw new Error(`${message}. Got: ${this.current}`);
-    }
-
-    private consumeOptional(type: TokenType): boolean {
-        if (this.check(type)) {
+    private consumeToken(type: TokenType, message: string): Token {
+        if (this.checkToken(type)) {
             this.advance();
-            return true;
+            return this.current();
         }
-        return false;
+        throw new Error(`${message}. Got: ${this.peek()}`);
     }
 
     private consumeSemicolon(): void {
         // Semicolon is optional at end of script or before }
-        if (this.check(TokenType.SEMICOLON)) {
+        if (this.checkToken(TokenType.SEMICOLON)) {
             this.advance();
-        } else if (!this.isAtEnd() && !this.check(TokenType.RIGHT_BRACE)) {
-            // If not at end and not before }, semicolon might be required
-            // But for now, make it flexible
         }
     }
 }
-
