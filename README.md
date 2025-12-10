@@ -44,15 +44,110 @@ npm run cli -- -e "println(1 + 2)"
 
 ## API
 
+### AviatorScript
+
 ```typescript
+import { AviatorScript } from "aviator-parser";
+
 const aviator = new AviatorScript();
 
-// Execute
+// Execute code
 aviator.execute(code: string, context?: Record<string, any>): any
 
-// Compile
+// Compile for reuse
 const compiled = aviator.compile(code: string);
 compiled.execute(context?: Record<string, any>): any
+```
+
+### StaticAnalyzer
+
+```typescript
+import { StaticAnalyzer, Diagnostic, DiagnosticSeverity, TypeEnv } from "aviator-parser";
+
+const analyzer = new StaticAnalyzer(env?: TypeEnv);
+
+// Analyze code and get diagnostics
+const diagnostics: Diagnostic[] = analyzer.analyze(code: string);
+
+// Diagnostic structure
+interface Diagnostic {
+    message: string;
+    line: number;
+    column?: number;
+    severity: DiagnosticSeverity; // Error = 1, Warning = 2, Information = 3
+    source: string;
+}
+
+// Type environment
+const env: TypeEnv = {
+    userId: AviatorType.Long,
+    userName: AviatorType.String
+};
+```
+
+### Expression Parser (Pratt)
+
+```typescript
+import { Pratt, Expr } from "aviator-parser";
+
+// Parse expression
+const ast: Expr = Pratt.parse("a + b * c");
+
+// AST methods
+ast.toString();  // "(a + (b * c))"
+ast.rp();        // "(+ a (* b c))"
+```
+
+### Script Parser
+
+```typescript
+import { ScriptParser, Stmt } from "aviator-parser";
+
+// Parse script to statements
+const statements: Stmt[] = ScriptParser.parse(`
+    let a = 1;
+    let b = 2;
+    a + b
+`);
+```
+
+### Interpreter
+
+```typescript
+import { Interpreter } from "aviator-parser";
+
+const interpreter = new Interpreter(context?: Record<string, any>);
+
+// Evaluate expression
+const result = interpreter.evaluate(expr: Expr): any
+
+// Execute statements
+const result = interpreter.executeStatements(statements: Stmt[]): any
+
+// Execute block with new scope
+const result = interpreter.executeBlock(statements: Stmt[], extraVariables?: Record<string, any>): any
+
+// Define variable
+interpreter.define(name: string, value: any): void
+
+// Assign variable
+interpreter.assign(name: string, value: any): void
+```
+
+### Types
+
+```typescript
+import { 
+    AviatorType,           // enum: Long, Double, Boolean, String, Pattern, BigInt, Decimal, Nil, Void, Any, List, Map, Set
+    DiagnosticSeverity,    // enum: Error = 1, Warning = 2, Information = 3
+    Diagnostic,            // interface
+    TypeEnv,               // interface: { [key: string]: AviatorType }
+    Expr,                  // interface
+    Stmt,                  // interface
+    Token,                 // class
+    TokenType,             // enum
+    ParseError             // class extends Error
+} from "aviator-parser";
 ```
 
 ## Language
