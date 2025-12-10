@@ -1,217 +1,226 @@
-import { Lexer, Token, TokenType } from "./lexer.js"
+import { AviatorLexer } from './lexer';
+import { Token, TokenType } from './token';
+import { BindingPower } from './binding_power';
+import { Expr, Node, Leaf, FunctionCall, LambdaFunction } from './ast';
 
-export type StatementNode = {
-  type: 'statement',
-  expression: ExpressionNode
-}
+export class Pratt {
+    private lexer: AviatorLexer;
+    private token: Token | null = null;
+    private lookahead: Token | null = null;
+    private result: Expr | null = null;
 
-export type ExpressionNode = {
-  type: 'ternary-expression',
-  test: ExpressionNode,
-  consequent: ExpressionNode,
-  alternate: ExpressionNode
-} | {
-  type: 'binary-expression',
-  left: ExpressionNode,
-  right: ExpressionNode,
-  operator: BinaryOperator
-} | {
-  type: 'unary-expression',
-  argument: ExpressionNode,
-  operator: UnaryOperator
-} | RegexLiteral | StringLiteral | NumberLiteral | BooleanLiteral | NilLiteral | Identifier | FunctionCall
-
-export type BinaryOperator =
-  | 'Add' | 'Subtract' | 'Multiply' | 'Divide' | 'Mod'
-  | 'Like' | 'Equal' | 'NotEqual' | 'LessThan' | 'LessThanEqual' | 'GreaterThan' | 'GreaterThanEqual' | 'LogicOr' | 'LogicAnd' | 'LogicNot'
-
-export type UnaryOperator = 'LogicNot'
-
-export type RegexLiteral = {
-  type: 'regex-literal',
-  value: string
-}
-
-export type StringLiteral = {
-  type: 'string-literal',
-  value: string
-}
-
-export type NumberLiteral = {
-  type: 'number-literal',
-  value: number
-}
-
-export type BooleanLiteral = {
-  type: 'boolean-literal',
-  value: boolean
-}
-
-export type NilLiteral = {
-  type: 'nil-literal'
-}
-
-export type Identifier = {
-  type: 'identifier',
-  name: string
-}
-
-export type FunctionCall = {
-  type: 'function-call',
-  name: string,
-  arguments: ExpressionNode[]
-}
-
-export class AviatorParser {
-  private lexer: Lexer
-  private currentToken?: Token
-  constructor(code: string) { this.lexer = new Lexer(code) }
-  public parse(): StatementNode[] {
-    this.next()
-    return this.parseStatements()
-  }
-
-  private parseStatements(): StatementNode[] {
-    const statements: StatementNode[] = []
-    while (this.currentToken !== undefined) {
-      if (this.currentToken?.type === 'Semicolon') {
-        this.next()
-        continue
-      }
-
-      statements.push({ type: 'statement', expression: this.parseExpression() })
-    }
-    return statements
-  }
-
-  private parseExpression(priority: number = 0): ExpressionNode {
-    let left: ExpressionNode | undefined = this.tryParseUnary()
-    if (left === undefined) {
-      throw new Error('Unexpected token: ' + this.currentToken?.type + ' ' + this.currentToken?.value)
+    constructor(lexer: AviatorLexer) {
+        this.lexer = lexer;
     }
 
-    while (isBinaryOperator(this.currentToken) && getPriority(this.currentToken!.type) > priority) {
-      const operator = this.currentToken
-      this.next()
-      left = {
-        type: 'binary-expression',
-        left: left!,
-        operator: operator!.type as BinaryOperator,
-        right: this.parseExpression(getPriority(operator!.type))
-      }
-
-      if (this.tryMatch('Conditional')) {
-        const test = left
-        const consequent = this.parseExpression(getPriority('Conditional'))
-        this.match('Colon')
-        const alternate = this.parseExpression(getPriority('Colon'))
-        return { type: 'ternary-expression', test, consequent, alternate }
-      }
+    public static parse(code: string): Expr {
+        return new Pratt(new AviatorLexer(code)).parse();
     }
 
-    return left as ExpressionNode
-  }
-
-  private tryParseUnary(): ExpressionNode | undefined {
-    if (this.currentToken?.type === 'Regex') {
-      const value = this.currentToken.value as string
-      this.match('Regex')
-      return { type: 'regex-literal', value }
-    } else if (this.currentToken?.type === 'String') {
-      const value = this.currentToken.value as string
-      this.match('String')
-      return { type: 'string-literal', value }
-    } else if (this.currentToken?.type === 'Number') {
-      const value = this.currentToken.value as number
-      this.match('Number')
-      return { type: 'number-literal', value }
-    } else if (this.currentToken?.type === 'True') {
-      this.match('True')
-      return { type: 'boolean-literal', value: true }
-    } else if (this.currentToken?.type === 'False') {
-      this.match('False')
-      return { type: 'boolean-literal', value: false }
-    } else if (this.currentToken?.type === 'Nil') {
-      this.match('Nil')
-      return { type: 'nil-literal' }
-    } else if (this.currentToken?.type === 'Identifier') {
-      const name = this.currentToken.value as string
-      this.match('Identifier')
-      // @ts-ignore
-      if (this.currentToken.type === 'LeftParen') {
-        return this.parseFunctionCall(name)
-      }
-      return { type: 'identifier', name }
-    } else if (this.currentToken?.type === 'LeftParen') {
-      this.match('LeftParen')
-      const expression = this.parseExpression()
-      this.match('RightParen')
-      return expression
-    } else if (this.currentToken?.type === 'LogicNot') {
-      this.match('LogicNot')
-      const argument = this.parseExpression(getPriority('LogicNot'))
-      return {
-        type: 'unary-expression',
-        operator: 'LogicNot',
-        argument
-      }
-    }
-  }
-
-  private parseFunctionCall(name: string): FunctionCall {
-    this.match('LeftParen')
-    const args: ExpressionNode[] = []
-    while (this.currentToken?.type !== 'RightParen') {
-      args.push(this.parseExpression())
-      if (this.currentToken?.type === 'Comma') {
-        this.match('Comma')
-      }
-    }
-    this.match('RightParen')
-    return { type: 'function-call', name, arguments: args }
-  }
-
-  private next(): void {
-    this.currentToken = this.lexer.next()
-  }
-
-  private match(type: TokenType): void {
-    if (this.currentToken?.type !== type) {
-      throw new Error('Unexpected token: ' + this.currentToken?.type + ' ' + this.currentToken?.value)
-    }
-    this.next()
-  }
-
-  private tryMatch(type: TokenType): boolean {
-    if (this.currentToken?.type === type) {
-      this.next()
-      return true
+    public parse(): Expr {
+        if (this.result != null) {
+            return this.result;
+        }
+        this.next();
+        this.result = this.expr(0);
+        return this.result;
     }
 
-    return false
-  }
-}
+    private expr(ubp: number): Expr {
+        let left = this.primary();
 
+        while (true) {
+            if (this.peekType(TokenType.EOF)) {
+                break;
+            }
 
-function isBinaryOperator(currentToken: Token | undefined) {
-  if (currentToken === undefined) return false
-  return currentToken.type in {
-    'Add': true, 'Subtract': true, 'Multiply': true, 'Divide': true, 'Mod': true,
-    'Like': true, 'Equal': true, 'NotEqual': true, 'LessThan': true, 'LessThanEqual': true, 'GreaterThan': true, 'GreaterThanEqual': true, 'LogicOr': true, 'LogicAnd': true, 'LogicNot': true
-  }
-}
+            const op = this.peek();
 
-function getPriority(type: TokenType): number {
-  switch (type) {
-    case 'LeftParen': case 'RightParen': return 15
-    case 'LogicNot': return 14
-    case 'Multiply': case 'Divide': case 'Mod': return 13
-    case 'Add': case 'Subtract': return 12
-    case 'LessThan': case 'LessThanEqual': case 'GreaterThan': case 'GreaterThanEqual': return 11
-    case 'Equal': case 'NotEqual': case 'Like': return 10
-    case 'LogicAnd': return 9
-    case 'LogicOr': return 8
-    case 'Conditional': case 'Colon': return 7
-    default: throw new Error('Unknown operator: ' + type)
-  }
+            if (BindingPower.isInfix(op)) {
+                const lbp = BindingPower.infixLeft(op);
+                if (lbp < ubp) {
+                    break;
+                }
+
+                left = this.infixExpr(left, op);
+                continue;
+            }
+
+            if (BindingPower.isPostfix(op)) {
+                const rbp = BindingPower.postfix(op);
+                if (rbp < ubp) {
+                    break;
+                }
+
+                left = this.postfixExpr(left, op);
+                continue;
+            }
+
+            break;
+        }
+
+        return left;
+    }
+
+    private primary(): Expr {
+        if (this.peekType(TokenType.LEFT_PAREN)) {
+            return this.subExpr();
+        }
+
+        if (this.peekLeaf()) {
+            return this.leaf();
+        }
+
+        if (this.peekUnary()) {
+            return this.prefixExpr();
+        }
+
+        if (this.peekType(TokenType.LAMBDA)) {
+            return this.lambda();
+        }
+
+        throw new Error("Unexpected primary token: " + this.getToken());
+    }
+
+    private prefixExpr(): Node {
+        this.next();
+        const op = this.getToken();
+        const right = this.expr(BindingPower.prefix(this.getToken()));
+        return new Node(op, right);
+    }
+
+    private infixExpr(left: Expr, op: Token): Expr {
+        this.next();
+        if (this.tokenIs(TokenType.CONDITIONAL)) {
+            return this.conditional(left, op);
+        }
+
+        return new Node(op, left, this.expr(BindingPower.infixRight(op)));
+    }
+
+    private postfixExpr(left: Expr, op: Token): Expr {
+        this.next();
+        if (this.tokenIs(TokenType.LEFT_BRACKET)) {
+            left = this.objectAccess(left, op);
+        }
+
+        if (this.tokenIs(TokenType.LEFT_PAREN)) {
+            left = this.functionCall(left);
+        }
+
+        return left;
+    }
+
+    private subExpr(): Expr {
+        this.eat(TokenType.LEFT_PAREN);
+        const expr = this.expr(0);
+        this.eat(TokenType.RIGHT_PAREN);
+        return expr;
+    }
+
+    private leaf(): Leaf {
+        return new Leaf(this.next());
+    }
+
+    private lambda(): LambdaFunction {
+        this.eat(TokenType.LAMBDA);
+        this.eat(TokenType.LEFT_PAREN);
+        const parameters: Token[] = [];
+        while (!this.tokenIs(TokenType.RIGHT_PAREN)) {
+            parameters.push(this.next());
+            if (this.peekType(TokenType.RIGHT_PAREN)) {
+                break;
+            }
+            this.eat(TokenType.COMMA);
+        }
+        this.eat(TokenType.RIGHT_PAREN);
+        this.eat(TokenType.ARROW);
+        const body = this.expr(0);
+        this.eat(TokenType.END);
+        return new LambdaFunction(parameters, body);
+    }
+
+    private conditional(left: Expr, op: Token): Expr {
+        const thenExpr = this.expr(0);
+        this.eat(TokenType.COLON);
+        const elseExpr = this.expr(BindingPower.infixRight(op));
+        return new Node(op, left, thenExpr, elseExpr);
+    }
+
+    private objectAccess(left: Expr, op: Token): Expr {
+        const subexpr = this.expr(0);
+        this.eat(TokenType.RIGHT_BRACKET);
+        return new Node(op, left, subexpr);
+    }
+
+    private functionCall(left: Expr): Expr {
+        const args: Expr[] = [];
+        // Check for immediate closing paren first
+        if (this.peekType(TokenType.RIGHT_PAREN)) {
+            this.eat(TokenType.RIGHT_PAREN);
+            return new FunctionCall(left, args);
+        }
+        
+        while (true) {
+            args.push(this.expr(0));
+            if (this.peekType(TokenType.RIGHT_PAREN)) {
+                break;
+            }
+            // If not closing paren, expect COMMA.
+            // If we hit EOF or something else, it will throw in next iteration or next eat.
+            this.eat(TokenType.COMMA);
+        }
+        this.eat(TokenType.RIGHT_PAREN);
+        return new FunctionCall(left, args);
+    }
+
+    private getToken(): Token {
+        if (!this.token) {
+            throw new Error("Token is null. Parser not initialized?");
+        }
+        return this.token;
+    }
+
+    private tokenIs(type: TokenType): boolean {
+        return this.getToken().type === type;
+    }
+
+    private peekUnary(): boolean {
+        return this.peekType(TokenType.SUBTRACT) || 
+               this.peekType(TokenType.LOGIC_NOT) || 
+               this.peekType(TokenType.BIT_NOT);
+    }
+
+    private peekLeaf(): boolean {
+        return this.peekType(TokenType.NUMBER) || 
+               this.peekType(TokenType.IDENTIFIER) || 
+               this.peekType(TokenType.STRING) || 
+               this.peekType(TokenType.TRUE) || 
+               this.peekType(TokenType.FALSE) || 
+               this.peekType(TokenType.NIL) || 
+               this.peekType(TokenType.REGEX);
+    }
+
+    private next(): Token {
+        this.token = this.lookahead;
+        this.lookahead = this.lexer.next();
+        return this.token!;
+    }
+
+    private peek(): Token {
+        return this.lookahead!;
+    }
+
+    private peekType(type: TokenType): boolean {
+        if (!this.peek()) return type === TokenType.EOF; // If peek is null/undefined, it's effectively EOF? No, lookahead initialized.
+        return this.peek().type === type;
+    }
+
+    private eat(type: TokenType): void {
+        this.next();
+        if (!this.tokenIs(type)) {
+            // Special handling for EOF/Error reporting
+            throw new Error(`Expect ${type} but got: ${this.getToken()}`);
+        }
+    }
 }

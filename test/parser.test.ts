@@ -1,355 +1,146 @@
-import { describe, it } from "node:test"
-import assert from 'assert/strict'
-import { AviatorParser } from "../src/parser.js"
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
+import { Pratt } from '../src/parser';
 
-describe("parser", () => {
-  it("logic or", () => {
-    const exp = `deviceId == 'EA2BE91A-2790-45B5-BB1C-229B6AC09366' || deviceId == '24680522-11B0-4ED3-8CEE-5288D5701E88' || deviceId == '401D60F4-94CC-491C-AC03-7EFB0F7FA80B' || deviceId == '8FB189B3-E38D-4130-98CF-703AA24629D4' || deviceId == 'BAEC7EBA-1E07-4A29-AC02-7EBAC61998BA' || deviceId == '74056989-DC8E-43BF-B96E-CEBFD6BD5D47'`
-    const parser = new AviatorParser(exp)
-    const root = parser.parse()
-    assertAssignable(root, [{
-      type: 'statement',
-      expression: {
-        type: 'binary-expression',
-        left: {
-          type: 'binary-expression',
-          left: {
-            type: 'binary-expression',
-            left: {
-              type: 'binary-expression',
-              left: {
-                type: 'binary-expression',
-                left: {
-                  type: 'binary-expression',
-                  left: { type: 'identifier', name: 'deviceId' },
-                  operator: 'Equal',
-                  right: {
-                    type: 'string-literal',
-                    value: 'EA2BE91A-2790-45B5-BB1C-229B6AC09366'
-                  }
-                },
-                operator: 'LogicOr',
-                right: {
-                  type: 'binary-expression',
-                  left: { type: 'identifier', name: 'deviceId' },
-                  operator: 'Equal',
-                  right: {
-                    type: 'string-literal',
-                    value: '24680522-11B0-4ED3-8CEE-5288D5701E88'
-                  }
-                }
-              },
-              operator: 'LogicOr',
-              right: {
-                type: 'binary-expression',
-                left: { type: 'identifier', name: 'deviceId' },
-                operator: 'Equal',
-                right: {
-                  type: 'string-literal',
-                  value: '401D60F4-94CC-491C-AC03-7EFB0F7FA80B'
-                }
-              }
-            },
-            operator: 'LogicOr',
-            right: {
-              type: 'binary-expression',
-              left: { type: 'identifier', name: 'deviceId' },
-              operator: 'Equal',
-              right: {
-                type: 'string-literal',
-                value: '8FB189B3-E38D-4130-98CF-703AA24629D4'
-              }
-            }
-          },
-          operator: 'LogicOr',
-          right: {
-            type: 'binary-expression',
-            left: { type: 'identifier', name: 'deviceId' },
-            operator: 'Equal',
-            right: {
-              type: 'string-literal',
-              value: 'BAEC7EBA-1E07-4A29-AC02-7EBAC61998BA'
-            }
-          }
-        },
-        operator: 'LogicOr',
-        right: {
-          type: 'binary-expression',
-          left: { type: 'identifier', name: 'deviceId' },
-          operator: 'Equal',
-          right: {
-            type: 'string-literal',
-            value: '74056989-DC8E-43BF-B96E-CEBFD6BD5D47'
-          }
-        }
-      }
-    }])
-  })
+describe('Pratt Parser', () => {
+    it('testAddAssociativity', () => {
+        const expr = Pratt.parse("1 + 2 + 3");
+        assert.strictEqual(expr.rp(), "(+ (+ 1 2) 3)");
+    });
 
-  it("logic and with comment", () => {
-    const exp = `R_IAPRiskUserHigh==1&&business!='WEB'&&platform=='ios'## && channel=='APPLE_IAP' ## && business=='CASH_WALLET'`
-    const parser = new AviatorParser(exp)
-    const root = parser.parse()
-    assertAssignable(root, [{
-      type: 'statement',
-      expression: {
-        type: 'binary-expression',
-        left: {
-          type: 'binary-expression',
-          left: {
-            type: 'binary-expression',
-            left: { type: 'identifier', name: 'R_IAPRiskUserHigh' },
-            operator: 'Equal',
-            right: { type: 'number-literal', value: 1 }
-          },
-          operator: 'LogicAnd',
-          right: {
-            type: 'binary-expression',
-            left: { type: 'identifier', name: 'business' },
-            operator: 'NotEqual',
-            right: { type: 'string-literal', value: 'WEB' }
-          }
-        },
-        operator: 'LogicAnd',
-        right: {
-          type: 'binary-expression',
-          left: { type: 'identifier', name: 'platform' },
-          operator: 'Equal',
-          right: { type: 'string-literal', value: 'ios' }
-        }
-      }
-    }])
-  })
+    it('testSubtractAssociativity', () => {
+        const expr = Pratt.parse("1 - 2 - 3");
+        assert.strictEqual(expr.rp(), "(- (- 1 2) 3)");
+    });
 
-  it("logic and & or", () => {
-    const exp = `R_IAPRiskUserHigh==1&&business!='WEB'&&platform=='ios'||channel=='APPLE_IAP'&&business=='CASH_WALLET'`
-    const parser = new AviatorParser(exp)
-    const root = parser.parse()
-    assertAssignable(root, [{
-      type: 'statement',
-      expression: {
-        type: 'binary-expression',
-        left: {
-          type: 'binary-expression',
-          left: {
-            type: 'binary-expression',
-            left: {
-              type: 'binary-expression',
-              left: { type: 'identifier', name: 'R_IAPRiskUserHigh' },
-              operator: 'Equal',
-              right: { type: 'number-literal', value: 1 }
-            },
-            operator: 'LogicAnd',
-            right: {
-              type: 'binary-expression',
-              left: { type: 'identifier', name: 'business' },
-              operator: 'NotEqual',
-              right: { type: 'string-literal', value: 'WEB' }
-            }
-          },
-          operator: 'LogicAnd',
-          right: {
-            type: 'binary-expression',
-            left: { type: 'identifier', name: 'platform' },
-            operator: 'Equal',
-            right: { type: 'string-literal', value: 'ios' }
-          }
-        },
-        operator: 'LogicOr',
-        right: {
-          type: 'binary-expression',
-          left: {
-            type: 'binary-expression',
-            left: { type: 'identifier', name: 'channel' },
-            operator: 'Equal',
-            right: { type: 'string-literal', value: 'APPLE_IAP' }
-          },
-          operator: 'LogicAnd',
-          right: {
-            type: 'binary-expression',
-            left: { type: 'identifier', name: 'business' },
-            operator: 'Equal',
-            right: { type: 'string-literal', value: 'CASH_WALLET' }
-          }
-        }
-      }
-    }])
-  })
+    it('test1', () => {
+        const expr = Pratt.parse("1 + 2 * 3");
+        assert.strictEqual(expr.rp(), "(+ 1 (* 2 3))");
+    });
 
-  it("binary expression & unary expression", () => {
-    const exp = `R_IAPRiskUserHigh==1&&!isXxx!=true`
-    const parser = new AviatorParser(exp)
-    const root = parser.parse()
-    assertAssignable(root, [{
-      type: 'statement',
-      expression: {
-        type: 'binary-expression',
-        left: {
-          type: 'binary-expression',
-          left: { type: 'identifier', name: 'R_IAPRiskUserHigh' },
-          operator: 'Equal',
-          right: { type: 'number-literal', value: 1 }
-        },
-        operator: 'LogicAnd',
-        right: {
-          type: 'binary-expression',
-          left: { type: 'unary-expression', operator: 'LogicNot', argument: { type: 'identifier', name: 'isXxx' } },
-          operator: 'NotEqual',
-          right: { type: 'boolean-literal', value: true }
-        }
-      }
-    }])
-  })
+    it('test2', () => {
+        const expr = Pratt.parse("a + b * c * d + e");
+        assert.strictEqual(expr.rp(), "(+ (+ a (* (* b c) d)) e)");
+    });
 
-  it("regex", () => {
-    const exp = `(isVirtualPhone4Shield == 1 || phoneNumberNew =~ /86192.*/) && build < 7330000 && isUserRecentRegister72hour == 1`
-    const parser = new AviatorParser(exp)
-    const root = parser.parse()
-    assertAssignable(root, [{
-      type: 'statement',
-      expression: {
-        type: 'binary-expression',
-        left: {
-          type: 'binary-expression',
-          left: {
-            type: 'binary-expression',
-            left: {
-              type: 'binary-expression',
-              left: { type: 'identifier', name: 'isVirtualPhone4Shield' },
-              operator: 'Equal',
-              right: { type: 'number-literal', value: 1 }
-            },
-            operator: 'LogicOr',
-            right: {
-              type: 'binary-expression',
-              left: { type: 'identifier', name: 'phoneNumberNew' },
-              operator: 'Like',
-              right: { type: 'regex-literal', value: '86192.*' }
-            }
-          },
-          operator: 'LogicAnd',
-          right: {
-            type: 'binary-expression',
-            left: { type: 'identifier', name: 'build' },
-            operator: 'LessThan',
-            right: { type: 'number-literal', value: 7330000 }
-          }
-        },
-        operator: 'LogicAnd',
-        right: {
-          type: 'binary-expression',
-          left: { type: 'identifier', name: 'isUserRecentRegister72hour' },
-          operator: 'Equal',
-          right: { type: 'number-literal', value: 1 }
-        },
-      }
-    }])
-  })
+    it('testDotAssociativity', () => {
+        const expr = Pratt.parse("a.b.c.d");
+        assert.strictEqual(expr.rp(), "(. (. (. a b) c) d)");
+    });
 
-  it("function call", () => {
-    const exp = `string.contains(tinyAccessibilityServices,"com.wtkj.app.clicker")`
-    const parser = new AviatorParser(exp)
-    const root = parser.parse()
-    assertAssignable(root, [{
-      type: 'statement',
-      expression: {
+    it('test3', () => {
+        const expr = Pratt.parse("1 + a.b * c");
+        assert.strictEqual(expr.rp(), "(+ 1 (* (. a b) c))");
+    });
 
-        type: 'function-call',
-        name: 'string.contains',
-        arguments: [
-          { type: 'identifier', name: 'tinyAccessibilityServices' },
-          { type: 'string-literal', value: 'com.wtkj.app.clicker' }
-        ]
-      }
-    }])
-  })
+    it('testSubtractUnary1', () => {
+        const expr = Pratt.parse("-1");
+        assert.strictEqual(expr.rp(), "(- 1)");
+    });
 
-  it("ternary expression", () => {
-    const exp = `(userAccountPhoneNumberPlus != nil ? yongAnPhoneRiskNewUserAccount == "" : false)`
-    const parser = new AviatorParser(exp)
-    const root = parser.parse()
-    assertAssignable(root, [{
-      type: 'statement',
-      expression: {
-        type: 'ternary-expression',
-        test: {
-          type: 'binary-expression',
-          left: { type: 'identifier', name: 'userAccountPhoneNumberPlus' },
-          operator: 'NotEqual',
-          right: { type: 'nil-literal' }
-        },
-        consequent: {
-          type: 'binary-expression',
-          left: { type: 'identifier', name: 'yongAnPhoneRiskNewUserAccount' },
-          operator: 'Equal',
-          right: { type: 'string-literal', value: '' }
-        },
-        alternate: { type: 'boolean-literal', value: false }
-      }
-    }])
-  })
+    it('testSubtractUnary2', () => {
+        const expr = Pratt.parse("1 - -2");
+        assert.strictEqual(expr.rp(), "(- 1 (- 2))");
+    });
 
-  it("statements", () => {
-    const code = `isUsedFreqCityIp;isTruthfulDevice;isBuildNotMiniUaAppBuild==1&&userId!=''&&deviceId!=''`
-    const parser = new AviatorParser(code)
-    const root = parser.parse()
-    assertAssignable(root, [{
-      type: 'statement',
-      expression: {
-        type: 'identifier',
-        name: 'isUsedFreqCityIp'
-      }
-    }, {
-      type: 'statement',
-      expression: {
-        type: 'identifier',
-        name: 'isTruthfulDevice'
-      }
-    }, {
-      type: 'statement',
-      expression: {
-        type: 'binary-expression',
-        left: {
-          type: 'binary-expression',
-          left: {
-            type: 'binary-expression',
-            left: { type: 'identifier', name: 'isBuildNotMiniUaAppBuild' },
-            operator: 'Equal',
-            right: { type: 'number-literal', value: 1 }
-          },
-          operator: 'LogicAnd',
-          right: {
-            type: 'binary-expression',
-            left: { type: 'identifier', name: 'userId' },
-            operator: 'NotEqual',
-            right: { type: 'string-literal', value: '' }
-          }
-        }
-      }
-    }])
-  })
-})
+    it('testSubtractUnary3', () => {
+        const expr = Pratt.parse("--1 * 2");
+        assert.strictEqual(expr.rp(), "(* (- (- 1)) 2)");
+    });
 
-function assertAssignable(obj: Record<string, any>, isAssignableTo: Record<string, any>, path = '$') {
-  for (const key in isAssignableTo) {
-    if (typeof isAssignableTo[key] === 'object') {
-      assertAssignable(obj[key], isAssignableTo[key], `${path}.${key}`)
-      continue
-    }
-    if (typeof isAssignableTo[key] === 'undefined') {
-      assert.equal(obj[key], isAssignableTo[key], `key: ${path}.${key}, excepted <${isAssignableTo[key]}>, got <${obj[key]}>`)
-    }
-    if (typeof isAssignableTo[key] === 'function') {
-      continue
-    }
-    if (Array.isArray(isAssignableTo[key])) {
-      assert.equal(obj[key].length, isAssignableTo[key].length)
-      for (let i = 0; i < isAssignableTo[key].length; i++) {
-        assertAssignable(obj[key][i], isAssignableTo[key][i], `${path}.${key}[${i}]`)
-      }
-      continue
-    }
+    it('testSubtractUnary4', () => {
+        const expr = Pratt.parse("--a.b.c");
+        assert.strictEqual(expr.rp(), "(- (- (. (. a b) c)))");
+    });
 
-    assert.equal(obj[key], isAssignableTo[key], `key: ${path}.${key}, excepted <${isAssignableTo[key]}>, got ${obj[key]}>`)
-  }
-}
+    it('testSubtractUnary5', () => {
+        const expr = Pratt.parse("--1 + 2");
+        assert.strictEqual(expr.rp(), "(+ (- (- 1)) 2)");
+    });
+
+    it('testSubtractUnary6', () => {
+        const expr = Pratt.parse("--1 - 2");
+        assert.strictEqual(expr.rp(), "(- (- (- 1)) 2)");
+    });
+
+    it('testParentheses1', () => {
+        const expr = Pratt.parse("(1 + 2) * 3");
+        assert.strictEqual(expr.rp(), "(* (+ 1 2) 3)");
+    });
+
+    it('testParentheses2', () => {
+        const expr = Pratt.parse("(a + b).c + d");
+        assert.strictEqual(expr.rp(), "(+ (. (+ a b) c) d)");
+    });
+
+    it('testFieldAccess1', () => {
+        const expr = Pratt.parse("a[1][2][3]");
+        assert.strictEqual(expr.rp(), "([ ([ ([ a 1) 2) 3)");
+    });
+
+    it('testFieldAccess2', () => {
+        const expr = Pratt.parse("a.b['c']['d'].e");
+        assert.strictEqual(expr.rp(), "(. ([ ([ (. a b) 'c') 'd') e)");
+    });
+
+    it('testTernary1', () => {
+        const expr = Pratt.parse("a ? b : c ? d : e");
+        assert.strictEqual(expr.rp(), "(? a b (? c d e))");
+    });
+
+    it('testTernary2', () => {
+        const expr = Pratt.parse("a ? b ? c : d : e");
+        assert.strictEqual(expr.rp(), "(? a (? b c d) e)");
+    });
+
+    it('testFunctionCall1', () => {
+        const expr = Pratt.parse("f(1, 2, 3)");
+        assert.strictEqual(expr.rp(), "(f 1 2 3)");
+    });
+
+    it('testFunctionCall2', () => {
+        const expr = Pratt.parse("(lambda (x, y) -> x + y end)(1, 2)");
+        assert.strictEqual(expr.rp(), "(lambda (x y) -> (+ x y) end 1 2)");
+    });
+
+    it('testFunctionCall3', () => {
+        const expr = Pratt.parse("lambda (x, y) -> x + y end + 2");
+        assert.strictEqual(expr.rp(), "(+ lambda (x y) -> (+ x y) end 2)");
+    });
+
+    it('testEquality1', () => {
+        const expr = Pratt.parse("1 != 2 == 3");
+        assert.strictEqual(expr.rp(), "(== (!= 1 2) 3)");
+    });
+
+    it('testEquality2', () => {
+        const expr = Pratt.parse("1 > 2 == 3");
+        assert.strictEqual(expr.rp(), "(== (> 1 2) 3)");
+    });
+
+    it('testUseCase1', () => {
+        const expr = Pratt.parse("fun(\"\\\"\")");
+        assert.strictEqual(expr.rp(), "(fun \"\\\"\")");
+    });
+
+    it('testObjectAccessStringify', () => {
+        const expr = Pratt.parse("a.b[c]['d'].e");
+        assert.strictEqual(expr.toString(), "a.b[c]['d'].e");
+    });
+
+    it('testRegex', () => {
+        const expr = Pratt.parse("phoneWithCountryCode =~ /86162.*/");
+        assert.strictEqual(expr.rp(), "(=~ phoneWithCountryCode /86162.*/)");
+    });
+
+    it('testAssign', () => {
+        const expr = Pratt.parse("a || b = c && d || e");
+        const expr1 = Pratt.parse("a && b = c && d || e");
+        const expr2 = Pratt.parse("'' =~ b = /a/");
+        const expr3 = Pratt.parse("a == b = false");
+        assert.strictEqual(expr.toString(), "(a || (b = ((c && d) || e)))");
+        assert.strictEqual(expr1.toString(), "(a && (b = ((c && d) || e)))");
+        assert.strictEqual(expr2.toString(), "(('' =~ b) = /a/)");
+        assert.strictEqual(expr3.toString(), "((a == b) = false)");
+    });
+});

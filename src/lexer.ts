@@ -1,289 +1,456 @@
-import {
-  parseDec, parseHex, parseOct, isDigitWithUnderscore, isDigit,
-  isOctDigitWithUnderscore, isOctDigit, isHexDigitWithUnderscore,
-  isHexDigit, isIdentifierStart, isNumberLiteralStart, isIdentifierChar,
-  isEOF, isStringLiteralStart, getEscape, isDoubleQuote, isSingleQuote,
-  isNotEOL, isNotEOF,
-  isRegexLiteralStart
-} from "./util.js"
+import { Token, TokenType } from './token';
+import { LexerUtil } from './util';
 
-export type Token<TokenTypeGeneric extends TokenType = TokenType> = {
-  type: TokenTypeGeneric
-  value: TokenValueType<TokenTypeGeneric>
+class LexerState {
+    public readonly validTransferFrom: Map<TokenType, Set<TokenType>> = new Map([
+        [TokenType.DIVIDE, new Set([
+            TokenType.NUMBER, TokenType.IDENTIFIER, TokenType.RIGHT_PAREN, TokenType.RIGHT_BRACKET
+        ])],
+        [TokenType.DOT, new Set([
+            TokenType.IDENTIFIER, TokenType.RIGHT_BRACKET, TokenType.RIGHT_PAREN
+        ])]
+    ]);
+
+    public readonly invalidTransferFrom: Map<TokenType, Set<TokenType>> = new Map([
+        [TokenType.NUMBER, new Set([
+            TokenType.RIGHT_BRACKET, TokenType.RIGHT_PAREN, TokenType.IDENTIFIER
+        ])]
+    ]);
+
+    constructor(private lexer: AviatorLexer) {}
+
+    public expect(type: TokenType): boolean {
+        const lastTokenType = this.lexer.getLastToken().type;
+
+        if (this.validTransferFrom.has(type)) {
+            return this.validTransferFrom.get(type)!.has(lastTokenType);
+        }
+        if (this.invalidTransferFrom.has(type)) {
+            return !this.invalidTransferFrom.get(type)!.has(lastTokenType);
+        }
+
+        return true;
+    }
 }
 
-type TokenValueType<TokenTypeGeneric extends TokenType> =
-  /*                             TokenType => ValueType */
-  TokenTypeGeneric extends 'Identifier' ? string :
-  TokenTypeGeneric extends 'Number' ? number :
-  TokenTypeGeneric extends 'String' ? string :
-  TokenTypeGeneric extends 'Regex' ? string :
-  TokenTypeGeneric extends 'True' ? 'true' :
-  TokenTypeGeneric extends 'False' ? 'false' :
-  TokenTypeGeneric extends 'Nil' ? 'nil' :
-  TokenTypeGeneric extends 'Comment' ? string :
-  undefined
+export class AviatorLexer {
+    private readonly code: string;
+    private readonly state: LexerState;
+    private cursor: number = -1; // cursor points to current processed char
+    private line: number = 1;
+    private column: number = -1;
+    private lastToken: Token;
 
-export type TokenType =
-  | 'Identifier' | 'Number' | 'String' | 'Regex' | 'True' | 'False' | 'Nil'
-  | 'Add' | 'Subtract' | 'Multiply' | 'Divide' | 'Mod'
-  | 'Like' | 'Equal' | 'NotEqual' | 'LessThan' | 'LessThanEqual' | 'GreaterThan' | 'GreaterThanEqual' | 'LogicOr' | 'LogicAnd' | 'LogicNot'
-  | 'LeftParen' | 'RightParen'
-  | 'Conditional'
-  | 'Colon'
-  | 'Comma'
-  | 'Semicolon'
-
-export class Lexer {
-  private code: string
-  private cursor: number = 0
-
-  public constructor(code: string) {
-    this.code = code
-  }
-
-  public static fromCode(code: string): Lexer {
-    return new Lexer(code)
-  }
-
-  public next(): Token<any> | undefined {
-    let current: string | undefined
-    while (current = this.code[this.cursor]) {
-      this.cursor++
-      if (isEOF(current)) break
-      if (current === '\n') continue
-
-      if (current === '#') {
-        this.skipComment()
-        continue
-      }
-
-      if (isIdentifierStart(current)) return this.parseNextIdentifier()
-      if (isNumberLiteralStart(current)) return this.parseNextNumberLiteral()
-      if (isStringLiteralStart(current)) return this.parseNextStringLiteral()
-      if (isRegexLiteralStart(current)) return this.parseNextRegexLiteral()
-
-      if (current === '+') return { type: 'Add', value: undefined, }
-      if (current === '-') return { type: 'Subtract', value: undefined, }
-      if (current === '*') return { type: 'Multiply', value: undefined, }
-      if (current === '(') return { type: 'LeftParen', value: undefined, }
-      if (current === ')') return { type: 'RightParen', value: undefined, }
-      if (current === '?') return { type: 'Conditional', value: undefined, }
-      if (current === ':') return { type: 'Colon', value: undefined, }
-      if (current === ';') return { type: 'Semicolon', value: undefined, }
-      if (current === ',') return { type: 'Comma', value: undefined, }
-
-      if (current === '=') {
-        if (this.code[this.cursor] === '=') {
-          this.cursor++
-          return { type: 'Equal', value: undefined, }
-        } else if (this.code[this.cursor] === '~') {
-          this.cursor++
-          return { type: 'Like', value: undefined, }
-        }
-      }
-
-      if (current === '!') {
-        if (this.code[this.cursor] === '=') {
-          this.cursor++
-          return { type: 'NotEqual', value: undefined, }
-        } else return { type: 'LogicNot', value: undefined, }
-      }
-
-      if (current === '<') {
-        if (this.code[this.cursor] === '=') {
-          this.cursor++
-          return { type: 'LessThanEqual', value: undefined, }
-        } else return { type: 'LessThan', value: undefined, }
-      }
-
-      if (current === '>') {
-        if (this.code[this.cursor] === '=') {
-          this.cursor++
-          return { type: 'GreaterThanEqual', value: undefined, }
-        } else return { type: 'GreaterThan', value: undefined, }
-      }
-
-      if (current === '&') {
-        if (this.code[this.cursor] === '&') {
-          this.cursor++
-          return { type: 'LogicAnd', value: undefined, }
-        }
-      }
-
-      if (current === '|') {
-        if (this.code[this.cursor] === '|') {
-          this.cursor++
-          return { type: 'LogicOr', value: undefined, }
-        }
-      }
-
-    } // end while
-    return undefined
-  }
-
-  private skipComment() {
-    this.until(new Set(['\n', '\0']))
-  }
-
-  private parseNextIdentifier(): Token<'Identifier' | 'True' | 'False' | 'Nil'> | undefined {
-    const start = this.cursor - 1
-
-    let end = this.cursor
-    let current = this.code[end]
-    while (isIdentifierChar(current)) {
-      end++
-      if (this.code[end] === '.' && this.code[end + 1] === '.') {
-        throw new Error("lexer error, invalid object access syntax")
-      }
-      current = this.code[end]
+    constructor(code: string) {
+        this.code = code;
+        this.state = new LexerState(this);
+        this.lastToken = this.createEofToken(); 
     }
 
-    this.cursor = end
+    public getLastToken(): Token {
+        return this.lastToken;
+    }
 
-    const name = this.code.substring(start, end)
-    if (name === 'true') return { type: 'True', value: 'true' }
-    else if (name === 'false') return { type: 'False', value: 'false' }
-    else if (name === 'nil') return { type: 'Nil', value: 'nil' }
-    return { type: 'Identifier', value: name, }
-  }
+    public next(): Token {
+        while (this.hasNext()) {
+            const ch = this.nextChar();
+            if (ch === 10) { // \n
+                this.newLine();
+                continue;
+            }
 
-  private parseNextNumberLiteral(): Token<'Number'> | undefined {
-    const start = this.cursor - 1
+            if (this.isCommentStart()) {
+                this.untilMeet(10); // \n
+                continue;
+            }
 
-    if /* float */('.' === this.code[start] && isDigit(this.code[start + 1])) {
-      let end = start + 1
-      let current = this.code[end]
-      while (isDigitWithUnderscore(current)) {
-        end++
-        current = this.code[end]
-      }
-      this.cursor = end
+            if (this.isNumberLiteralStart()) {
+                if (this.state.expect(TokenType.NUMBER)) {
+                    return this.parseNextNumberLiteral();
+                }
+            }
 
-      const value = this.code.substring(start, end).replace(/_/g, '')
-      return { type: 'Number', value: parseDec('0' + value), }
-    } else if ('0' === this.code[start]) {
-      if /* hex */('0x' === this.code.substring(start, start + 2) && isHexDigit(this.code[start + 2])) {
-        let end = start + 2
-        let current = this.code[end]
-        while (isHexDigitWithUnderscore(current)) {
-          end++
-          current = this.code[end]
+            if (LexerUtil.isIdentifierStart(ch)) {
+                return this.parseNextIdentifier();
+            }
+
+            if (LexerUtil.isStringLiteralStart(ch)) {
+                return this.parseNextStringLiteral();
+            }
+
+            // ... (Other operators logic - copy from previous file content to preserve)
+            if (ch === 38) { // &
+                return this.parseNextAnd();
+            }
+            if (ch === 124) { // |
+                return this.parseNextOr();
+            }
+            if (ch === 60) { // <
+                return this.parseNextLessOrBitShiftLeft();
+            }
+            if (ch === 62) { // >
+                return this.parseNextGreaterOrBitShiftRight();
+            }
+            if (ch === 61) { // =
+                return this.parseNextEqualLikeOrAssign();
+            }
+            if (ch === 33) { // !
+                return this.parseNextNotOrNotEqual();
+            }
+
+            if (ch === 43) { // +
+                return this.token(TokenType.ADD, "+");
+            }
+            if (ch === 45) { // -
+                return this.tokenSubtractOrArrow();
+            }
+            if (ch === 42) { // *
+                return this.parseMultiplyOrPower();
+            }
+            if (ch === 47) { // /
+                if (this.state.expect(TokenType.DIVIDE)) {
+                    return this.token(TokenType.DIVIDE, "/");
+                }
+                if (this.state.expect(TokenType.REGEX)) {
+                    return this.parseNextRegexLiteral();
+                }
+            }
+            if (ch === 37) { // %
+                return this.token(TokenType.MOD, "%");
+            }
+            if (ch === 94) { // ^
+                return this.token(TokenType.BIT_XOR, "^");
+            }
+            if (ch === 126) { // ~
+                return this.token(TokenType.BIT_NOT, "~");
+            }
+
+            if (ch === 40) return this.token(TokenType.LEFT_PAREN, "(");
+            if (ch === 41) return this.token(TokenType.RIGHT_PAREN, ")");
+            if (ch === 91) return this.token(TokenType.LEFT_BRACKET, "[");
+            if (ch === 93) return this.token(TokenType.RIGHT_BRACKET, "]");
+            if (ch === 123) return this.token(TokenType.LEFT_BRACE, "{");
+            if (ch === 125) return this.token(TokenType.RIGHT_BRACE, "}");
+            if (ch === 46) return this.token(TokenType.DOT, ".");
+            if (ch === 63) return this.token(TokenType.CONDITIONAL, "?");
+            if (ch === 58) return this.token(TokenType.COLON, ":");
+            if (ch === 44) return this.token(TokenType.COMMA, ",");
+            if (ch === 59) return this.token(TokenType.SEMICOLON, ";");
         }
-        this.cursor = end
+        return this.createEofToken();
+    }
 
-        const value = this.code.substring(start, end).replace(/_/g, '')
-        return { type: 'Number', value: parseHex(value), }
-      } else if /* oct */ ('0' === this.code[start] && isOctDigit(this.code[start + 1])) {
-        let end = start + 1
-        let current = this.code[end]
-        while (isOctDigitWithUnderscore(current)) {
-          end++
-          current = this.code[end]
+    private createEofToken(): Token {
+        this.lastToken = new Token(
+            TokenType.EOF,
+            "",
+            this.cursor + 1,
+            this.cursor + 1,
+            this.line
+        );
+        return this.lastToken;
+    }
+
+    private isNumberLiteralStart(): boolean {
+        const current = this.currentChar();
+        return LexerUtil.isDigit(current)
+            || (current === 46 && LexerUtil.isDigit(this.peek()))
+            || (current === 46 && (this.peek() === 101 || this.peek() === 69)); 
+    }
+
+    // ... (Keep existing methods: parseNextAnd, parseNextOr, etc.)
+    private parseNextAnd(): Token {
+        if (this.peek() === 38) { // &
+            this.nextChar();
+            return this.token(TokenType.LOGIC_AND, "&&");
         }
-        this.cursor = end
+        return this.token(TokenType.BIT_AND, "&");
+    }
 
-        const value = this.code.substring(start, end).replace(/_/g, '')
-        return { type: 'Number', value: parseOct(value), }
-      } else if /* float */ ('.' === this.code[start + 1] && isDigit(this.code[start + 2])) {
-        let end = start + 2
-        let current = this.code[end]
-        while (isDigitWithUnderscore(current)) {
-          end++
-          current = this.code[end]
+    private parseNextOr(): Token {
+        if (this.peek() === 124) { // |
+            this.nextChar();
+            return this.token(TokenType.LOGIC_OR, "||");
         }
-        this.cursor = end
-
-        const value = this.code.substring(start, end).replace(/_/g, '')
-        return { type: 'Number', value: parseDec(value), }
-      }
-
-      return { type: 'Number', value: 0, }
-    } else /* dec */ {
-      let end = start + 1
-      let current = this.code[end]
-      while (isDigitWithUnderscore(current)) {
-        end++
-        current = this.code[end]
-      }
-      if (current === '.' && isDigit(this.code[end + 1])) {
-        end++
-        current = this.code[end]
-        while (isDigitWithUnderscore(current)) {
-          end++
-          current = this.code[end]
-        }
-      }
-      this.cursor = end
-
-      const value = this.code.substring(start, end).replace(/_/g, '')
-      return { type: 'Number', value: parseDec(value), }
-    }
-  }
-
-  private parseNextStringLiteral(): Token<'String'> | undefined {
-    const start = this.cursor - 1
-    if (isDoubleQuote(this.code[start]) || isSingleQuote(this.code[start])) {
-      return this.parseStringLiteral(start)
-    }
-    throw new Error("lexer error, invalid string literal")
-  }
-
-  private parseNextRegexLiteral(): Token<'Regex'> | undefined {
-    const start = this.cursor - 1
-    let cursor = start + 1
-    let current = this.code[cursor]
-    let literal = ''
-
-    while (current !== '/' && isNotEOL(current)) {
-      literal += current
-      current = this.code[++cursor]
-    }
-    if (current !== '/') {
-      throw new Error("lexer error, unterminated regex literal")
+        return this.token(TokenType.BIT_OR, "|");
     }
 
-    this.cursor = cursor + 1
-    return { type: 'Regex', value: literal }
-  }
+    private parseNextLessOrBitShiftLeft(): Token {
+        const lt = this.token(TokenType.LESS_THAN, "<");
 
-  /**
-   * @param start the position of the first double quote
-   */
-  private parseStringLiteral(start: number): Token<'String'> {
-    let quote = this.code[start]
-    let cursor = start + 1
-    let current = this.code[cursor]
-    let literal = ''
-
-    while (current !== quote && isNotEOL(current)) {
-      if (current === '\\' && this.code[cursor + 1] !== undefined) {
-        const escape = getEscape(this.code[++cursor])
-        if (escape === undefined) {
-          throw new Error("lexer error: invalid escape character")
+        this.untilNonMatch(LexerUtil.isWhiteSpace);
+        if (this.peek() === 61) { // =
+            this.nextChar();
+            return this.token(TokenType.LESS_THAN_EQUAL, "<=");
         }
 
-        literal += escape
-        current = this.code[++cursor]
-        continue
-      }
+        if (this.peek() === 60) { // <
+            this.nextChar();
+            return this.token(TokenType.SIGNED_BIT_SHIFT_LEFT, "<<");
+        }
 
-      literal += current
-      current = this.code[++cursor]
-    }
-    if (current !== quote) {
-      throw new Error("lexer error, unterminated string literal")
+        return lt;
     }
 
-    this.cursor = cursor + 1
-    return { type: 'String', value: literal, }
-  }
+    private parseNextGreaterOrBitShiftRight(): Token {
+        const gt = this.token(TokenType.GREATER_THAN, ">");
 
-  private until(charSet: Set<string>) {
-    let current = this.code[this.cursor]
-    while (!charSet.has(current) && isNotEOF(current)) {
-      this.cursor++
-      current = this.code[this.cursor]
+        this.untilNonMatch(LexerUtil.isWhiteSpace);
+        if (this.peek() === 61) { // =
+            this.nextChar();
+            return this.token(TokenType.GREATER_THAN_EQUAL, ">=");
+        }
+
+        if (this.peek() === 62) { // >
+            this.nextChar();
+            const shiftRight = this.token(TokenType.SIGNED_BIT_SHIFT_RIGHT, ">>");
+
+            this.untilNonMatch(LexerUtil.isWhiteSpace);
+            if (this.peek() === 62) { // >
+                this.nextChar();
+                return this.token(TokenType.UNSIGNED_BIT_SHIFT_RIGHT, ">>>");
+            }
+            return shiftRight;
+        }
+
+        return gt;
     }
-  }
+
+    private parseNextEqualLikeOrAssign(): Token {
+        const assign = this.token(TokenType.ASSIGN, "=");
+
+        this.untilNonMatch(LexerUtil.isWhiteSpace);
+        if (this.peek() === 61) { // =
+            this.nextChar();
+            return this.token(TokenType.EQUAL, "==");
+        }
+        if (this.peek() === 126) { // ~
+            this.nextChar();
+            return this.token(TokenType.LIKE, "=~");
+        }
+
+        return assign;
+    }
+
+    private parseNextNotOrNotEqual(): Token {
+        const not = this.token(TokenType.LOGIC_NOT, "!");
+
+        this.untilNonMatch(LexerUtil.isWhiteSpace);
+        if (this.peek() === 61) { // =
+            this.nextChar();
+            return this.token(TokenType.NOT_EQUAL, "!=");
+        }
+
+        return not;
+    }
+
+    private tokenSubtractOrArrow(): Token {
+        const sub = this.token(TokenType.SUBTRACT, "-");
+
+        this.untilNonMatch(LexerUtil.isWhiteSpace);
+        if (this.peek() === 62) { // >
+            this.nextChar();
+            return this.token(TokenType.ARROW, "->");
+        }
+        return sub;
+    }
+
+    private parseMultiplyOrPower(): Token {
+        const mul = this.token(TokenType.MULTIPLY, "*");
+
+        this.untilNonMatch(LexerUtil.isWhiteSpace);
+        if (this.peek() === 42) { // *
+            this.nextChar();
+            return this.token(TokenType.POW, "**");
+        }
+        return mul;
+    }
+
+    private parseNextNumberLiteral(): Token {
+        const start = this.cursor;
+
+        // hex
+        if (this.currentChar() === 48 && (this.peek() === 120 || this.peek() === 88)) { // 0, x, X
+            this.nextChar(); // skip '0'
+            this.nextChar(); // skip 'x'
+            this.untilNonMatch(LexerUtil.isHexDigit);
+            return this.numberToken(start, this.cursor + 1);
+        }
+
+        // dec
+        this.untilNonMatch(LexerUtil.isDigit);
+        if (this.peek() === 46) { // .
+            this.nextChar(); // consume dot
+            this.untilNonMatch(LexerUtil.isDigit);
+        }
+
+        if (this.peek() === 101 || this.peek() === 69) { // e or E
+            this.nextChar(); // to 'e'
+            this.nextChar(); // to char after 'e' (could be - or + or digit)
+            if (this.currentChar() === 45 || this.currentChar() === 43) { // - or +
+                this.nextChar(); // consume sign
+            }
+            this.untilNonMatch(LexerUtil.isDigit);
+        }
+
+        // Check for suffixes: N (BigInt) or M (Decimal)
+        // N = 78, M = 77
+        if (this.peek() === 78 || this.peek() === 77) {
+            this.nextChar();
+        }
+
+        return this.numberToken(start, this.cursor + 1);
+    }
+
+    private parseNextIdentifier(): Token {
+        const start = this.cursor;
+        while (LexerUtil.isIdentifierRest(this.peek())) {
+            this.assertObjectAccessValid(start);
+            this.nextChar();
+        }
+        this.assertObjectAccessEnd(start);
+        return this.identifierToken(start, this.cursor + 1);
+    }
+
+    private assertObjectAccessEnd(start: number): void {
+        if (this.currentChar() === 46) { // .
+             throw new Error(`Invalid object access syntax: <${this.code.substring(start, this.cursor + 1)}> expect alpha but got <${LexerUtil.toPrintable(this.peek())}> at ${this.line}:${this.column}`);
+        }
+    }
+
+    private assertObjectAccessValid(start: number): void {
+        if (this.currentChar() === 46 && LexerUtil.isNotIdentifierStart(this.peek())) {
+             throw new Error(`Invalid object access syntax: <${this.code.substring(start, this.cursor + 1)}> expect alpha but got <${LexerUtil.toPrintable(this.peek())}> at ${this.line}:${this.column}`);
+        }
+    }
+
+    private parseNextRegexLiteral(): Token {
+        const start = this.cursor;
+        this.nextChar(); // skip first '/'
+
+        this.untilMeet(47, 10, 13); // /, \n, \r
+
+        if (this.peek() !== 0 && LexerUtil.isNotEOL(this.peek())) {
+            this.nextChar(); // cursor to '/'
+        }
+
+        this.assertRegexEnd(start);
+        return this.regexToken(start);
+    }
+
+    private assertRegexEnd(start: number): void {
+        if (this.currentChar() !== 47) { // /
+             throw new Error(`Invalid regex syntax: <${this.code.substring(start, this.cursor + 1)}>, expect </> but got <${LexerUtil.toPrintable(this.currentChar())}> at ${this.line}:${this.column}`);
+        }
+    }
+
+    private parseNextStringLiteral(): Token {
+        const quote = this.currentChar();
+        let content = "";
+
+        const start = this.cursor;
+        
+        while (this.peek() !== quote && LexerUtil.isNotEOL(this.peek()) && this.peek() !== 0) {
+            this.nextChar();
+            // Handle Interpolation #{...} if needed, but for now treating as string content
+            // To support interpolation properly, Lexer needs to split string into parts or return special token.
+            // For simplicity in migration, we might let Runtime regex/parse handle interpolation if possible, 
+            // or implement full interpolation lexing.
+            // Full interpolation lexing involves nested Lexer states which is complex.
+            // Given "java特有的特性...可以不实现", and interpolation is Aviator specific but complex.
+            // I will stick to basic string parsing. Interpolation will be handled as plain string literal for now
+            // or handled at runtime/AST transformation if I decide to support it later.
+            
+            if (this.currentChar() === 92) { // \
+                this.nextChar();
+                content += "\\" + String.fromCharCode(this.currentChar());
+                continue;
+            }
+            content += String.fromCharCode(this.currentChar());
+        }
+
+        this.nextChar(); // skip to end quote
+        this.assertStringEnd(quote, start, this.cursor);
+        return this.stringToken(start, this.cursor + 1, String.fromCharCode(quote) + content + String.fromCharCode(quote));
+    }
+
+    private assertStringEnd(quote: number, start: number, end: number): void {
+        if (this.currentChar() !== quote) {
+             throw new Error(`Invalid string syntax: <${this.code.substring(start, end)}>, expect <${String.fromCharCode(quote)}> but got <${LexerUtil.toPrintable(this.currentChar())}> at ${this.line}:${this.column}`);
+        }
+    }
+
+    private numberToken(start: number, end: number): Token {
+        this.lastToken = new Token(TokenType.NUMBER, this.code.substring(start, end), start, end, this.line);
+        return this.lastToken;
+    }
+
+    private identifierToken(start: number, end: number): Token {
+        const name = this.code.substring(start, end);
+        const type = Token.KEYWORDS_MAP[name] || TokenType.IDENTIFIER;
+        this.lastToken = new Token(type, name, start, end, this.line);
+        return this.lastToken;
+    }
+
+    private regexToken(start: number): Token {
+        this.lastToken = new Token(TokenType.REGEX, this.code.substring(start, this.cursor + 1), start, this.cursor + 1, this.line);
+        return this.lastToken;
+    }
+
+    private stringToken(start: number, end: number, str: string): Token {
+        this.lastToken = new Token(TokenType.STRING, str, start, end, this.line);
+        return this.lastToken;
+    }
+
+    private token(type: TokenType, lexeme: string): Token {
+        this.lastToken = new Token(type, lexeme, this.cursor + 1 - lexeme.length, this.cursor + 1, this.line);
+        return this.lastToken;
+    }
+
+    private isCommentStart(): boolean {
+        return this.currentChar() === 35 && this.peek() === 35; // # and #
+    }
+
+    private untilMeet(...chs: number[]): void {
+        const set = new Set(chs);
+        while (this.peek() !== 0 && !set.has(this.peek())) {
+            this.nextChar();
+        }
+    }
+
+    private untilNonMatch(matcher: (ch: number) => boolean): void {
+        while (this.peek() !== 0 && matcher(this.peek())) {
+            this.nextChar();
+        }
+    }
+
+    private nextChar(): number {
+        this.column++;
+        this.cursor++;
+        return this.charAt(this.cursor);
+    }
+
+    private newLine(): void {
+        this.line++;
+        this.column = -1;
+    }
+
+    private hasNext(): boolean {
+        return this.peek() !== 0;
+    }
+
+    private currentChar(): number {
+        return this.charAt(this.cursor);
+    }
+
+    private peek(): number {
+        return this.charAt(this.cursor + 1);
+    }
+
+    private charAt(cursor: number): number {
+        if (cursor >= this.code.length) {
+            return 0;
+        }
+        return this.code.charCodeAt(cursor);
+    }
 }

@@ -1,160 +1,104 @@
-const _0_ASCII = '0'.charCodeAt(0)
+export class LexerUtil {
+    public static isIdentifierStart(ch: number): boolean {
+        return LexerUtil.isAlpha(ch) || ch === 95; // '_' is 95
+    }
 
-export function parseDec(value: string): number {
-  const [integerPart, decimalPart] = value.split(".")
-  return parseInteger(integerPart) + (decimalPart ? parseInteger(decimalPart) / Math.pow(10, decimalPart.length) : 0)
+    public static isIdentifierRest(ch: number): boolean {
+        return LexerUtil.isAlpha(ch) || LexerUtil.isDigit(ch) || ch === 95; // '_'
+    }
+
+    public static isNotIdentifierStart(ch: number): boolean {
+        return !LexerUtil.isIdentifierStart(ch);
+    }
+
+    public static isNumberLiteralStart(ch: number): boolean {
+        return LexerUtil.isDigit(ch) || ch === 46; // '.' is 46
+    }
+
+    public static isStringLiteralStart(ch: number): boolean {
+        return ch === 39 || ch === 34; // ' is 39, " is 34
+    }
+
+    public static isNotEOL(ch: number): boolean {
+        return ch !== 10 && ch !== 13; // \n=10, \r=13
+    }
+
+    public static isWhiteSpace(ch: number): boolean {
+        return ch === 32 || ch === 9 || ch === 12 || ch === 8 || ch === 10 || ch === 13;
+        // ' '=32, \t=9, \f=12, \b=8, \n=10, \r=13
+    }
+
+    public static isDigit(ch: number): boolean {
+        return ch >= 48 && ch <= 57; // '0'-'9'
+    }
+
+    public static toPrintable(ch: number): string {
+        switch (ch) {
+            case 10: return "\\n";
+            case 13: return "\\r";
+            case 9: return "\\t";
+            case 12: return "\\f";
+            case 8: return "\\b";
+            default: return String.fromCharCode(ch);
+        }
+    }
+
+    public static isHexDigit(ch: number): boolean {
+        return LexerUtil.isDigit(ch) || (ch >= 97 && ch <= 102) || (ch >= 65 && ch <= 70);
+        // a-f, A-F
+    }
+
+    private static isAlpha(ch: number): boolean {
+        return (ch >= 97 && ch <= 122) || (ch >= 65 && ch <= 90);
+        // a-z, A-Z
+    }
 }
 
-function parseInteger(value: string): number {
-  const digits = value.split("").map(digit => digit.charCodeAt(0) - _0_ASCII).reverse()
-  let result = 0
-  for (let i = 0; i < digits.length; ++i) {
-    result += Math.pow(10, i) * digits[i]
-  }
-  return result
-}
+export class ScopedSet<T> {
+    private parent: ScopedSet<T> | null;
+    private scope: Set<T>;
 
-export function parseOct(value: string): number {
-  const digits = value.split("").slice(1).map(digit => digit.charCodeAt(0) - _0_ASCII).reverse()
+    constructor(parent: ScopedSet<T> | null, scope: Set<T>) {
+        this.parent = parent;
+        this.scope = scope;
+    }
 
-  let result = 0
-  for (let i = 0; i < digits.length; ++i) {
-    result += Math.pow(8, i) * digits[i]
-  }
-  return result
-}
+    public static create<T>(): ScopedSet<T> {
+        return new ScopedSet<T>(null, new Set<T>());
+    }
 
-export function parseHex(value: string): number {
-  const digits = value.split("").slice(2).map(digit => parseSingleHex(digit)).reverse()
+    public enter(): ScopedSet<T> {
+        return new ScopedSet<T>(this, new Set<T>());
+    }
 
-  let result = 0
-  for (let i = 0; i < digits.length; ++i) {
-    result += Math.pow(16, i) * digits[i]
-  }
-  return result
-}
+    public leave(): ScopedSet<T> {
+        if (!this.parent) {
+            throw new Error("No parent scope to leave");
+        }
+        return this.parent;
+    }
 
-function parseSingleHex(value: string): any {
-  if (isDigit(value)) {
-    return value.charCodeAt(0) - _0_ASCII
-  }
+    public addTopScope(item: T): ScopedSet<T> {
+        if (this.parent) {
+            this.parent.addTopScope(item);
+        } else {
+            this.scope.add(item);
+        }
+        return this;
+    }
 
-  return value.toLowerCase().charCodeAt(0) - 'a'.charCodeAt(0) + 10
-}
+    public getScope(): Set<T> {
+        return this.scope;
+    }
 
-export function isEOF(char?: string): boolean {
-  return char === '\0' || char === undefined
-}
+    public contains(item: T): boolean {
+        if (this.parent && this.parent.contains(item)) {
+            return true;
+        }
+        return this.scope.has(item);
+    }
 
-export function isNotEOF(char?: string): boolean {
-  return !isEOF(char)
-}
-
-export function isIdentifierStart(char: string) {
-  return isAlpha(char) || char === '_'
-}
-
-export function isIdentifierChar(char: string) {
-  return isAlpha(char) || isDigit(char) || char === '_' || char === '.'
-}
-
-export function isAlpha(char: string) {
-  return (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')
-}
-
-export function isDigit(char: string): boolean {
-  return char >= '0' && char <= '9'
-}
-
-export function decNumber(char: string): boolean {
-  return char >= '0' && char <= '9' || char === '.'
-}
-
-export function isDigitWithUnderscore(char: string): boolean {
-  return isDigit(char) || char === '_'
-}
-
-export function isHexDigit(char: string): boolean {
-  return (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')
-}
-
-export function isHexDigitWithUnderscore(char: string): boolean {
-  return isHexDigit(char) || char === '_'
-}
-
-export function isOctDigit(char: string): boolean {
-  return char >= '0' && char <= '7'
-}
-
-export function isOctDigitWithUnderscore(char: string): boolean {
-  return isOctDigit(char) || char === '_'
-}
-
-export function isNumberLiteralStart(char: string): boolean {
-  return isDigit(char) || char === '.'
-}
-
-export function isDecLiteralStart(char: string): boolean {
-  return char >= '1' && char <= '9'
-}
-
-export function isStringLiteralStart(current: string): boolean {
-  return current === '"' || current === "'"
-}
-
-export function isRegexLiteralStart(current: string): boolean {
-  return current === '/'
-}
-
-export function getCurrentLine(code: string, cursor?: number): string | undefined {
-  if (cursor === undefined) {
-    cursor = code.length - 1
-  }
-
-  let current = code[cursor]
-  if (current === undefined) {
-    return undefined
-  }
-
-  let end = cursor
-  while (code[end] !== '\n' && code[end] !== '\r' && code[end] !== undefined) {
-    end++
-  }
-  if (end >= code.length) {
-    end = code.length
-  }
-
-
-  let start = cursor
-  while (code[start] !== '\n' && code[start] !== '\r' && code[start] !== undefined) {
-    start--
-  }
-
-  return code.substring(start + 1, end)
-}
-
-export function getEscape(char: string): string {
-  if (char === 'n') {
-    return '\n'
-  } else if (char === 't') {
-    return '\t'
-  } else if (char === 'r') {
-    return '\r'
-  } else if (char === '0') {
-    return '\0'
-  }
-
-  return char
-}
-
-export function isDoubleQuote(char: string): char is '"' {
-  return char === '"'
-}
-
-export function isSingleQuote(char: string): char is "'" {
-  return char === "'"
-}
-
-export function isNotEOL(char: string): boolean {
-  return !isEOF(char) && char !== '\n' && char !== '\r'
+    public addAll(items: T[]): void {
+        items.forEach(i => this.scope.add(i));
+    }
 }
