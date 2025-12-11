@@ -9,6 +9,7 @@ import { SymbolTable } from './symbol_table';
 export class StaticAnalyzer {
   private diagnostics: Diagnostic[] = [];
   private globalScope: SymbolTable;
+  private builtinsReturnType: Map<string, AviatorType> = new Map();
 
   constructor(env: TypeEnv = {}) {
     this.globalScope = new SymbolTable();
@@ -28,7 +29,7 @@ export class StaticAnalyzer {
     this.globalScope.define('now', AviatorType.Any);
     this.globalScope.define('rand', AviatorType.Any); // or Long if args
     this.globalScope.define('cmp', AviatorType.Any);
-    
+
     // Type casting/checking
     this.globalScope.define('long', AviatorType.Any);
     this.globalScope.define('double', AviatorType.Any);
@@ -37,6 +38,14 @@ export class StaticAnalyzer {
     this.globalScope.define('identity', AviatorType.Any);
     this.globalScope.define('type', AviatorType.Any);
     this.globalScope.define('is_def', AviatorType.Any);
+    this.builtinsReturnType.set('long', AviatorType.Long);
+    this.builtinsReturnType.set('double', AviatorType.Double);
+    this.builtinsReturnType.set('boolean', AviatorType.Boolean);
+    this.builtinsReturnType.set('str', AviatorType.String);
+    this.builtinsReturnType.set('identity', AviatorType.Any);
+    this.builtinsReturnType.set('type', AviatorType.String);
+    this.builtinsReturnType.set('is_def', AviatorType.Boolean);
+
 
     // Collections
     this.globalScope.define('range', AviatorType.Any);
@@ -51,6 +60,19 @@ export class StaticAnalyzer {
     this.globalScope.define('include', AviatorType.Any);
     this.globalScope.define('sort', AviatorType.Any);
     this.globalScope.define('reverse', AviatorType.Any);
+    this.builtinsReturnType.set('range', AviatorType.List);
+    this.builtinsReturnType.set('tuple', AviatorType.List); // Aviator tuple is array?
+    this.builtinsReturnType.set('max', AviatorType.Any);
+    this.builtinsReturnType.set('min', AviatorType.Any);
+    this.builtinsReturnType.set('count', AviatorType.Long);
+    this.builtinsReturnType.set('is_empty', AviatorType.Boolean);
+    this.builtinsReturnType.set('map', AviatorType.List); // map function returns list
+    this.builtinsReturnType.set('filter', AviatorType.List);
+    this.builtinsReturnType.set('reduce', AviatorType.Any);
+    this.builtinsReturnType.set('include', AviatorType.Boolean);
+    this.builtinsReturnType.set('sort', AviatorType.List);
+    this.builtinsReturnType.set('reverse', AviatorType.List);
+
 
     // seq.*
     this.globalScope.define('seq.list', AviatorType.Any);
@@ -60,6 +82,13 @@ export class StaticAnalyzer {
     this.globalScope.define('seq.get', AviatorType.Any);
     this.globalScope.define('seq.contains_key', AviatorType.Any);
     this.globalScope.define('seq.remove', AviatorType.Any); // returns collection
+    this.builtinsReturnType.set('seq.list', AviatorType.List);
+    this.builtinsReturnType.set('seq.set', AviatorType.Set);
+    this.builtinsReturnType.set('seq.map', AviatorType.Map);
+    this.builtinsReturnType.set('seq.add', AviatorType.Any); // returns collection
+    this.builtinsReturnType.set('seq.get', AviatorType.Any);
+    this.builtinsReturnType.set('seq.contains_key', AviatorType.Boolean);
+    this.builtinsReturnType.set('seq.remove', AviatorType.Any); // returns collection
 
     // string.*
     this.globalScope.define('string.contains', AviatorType.Any);
@@ -72,6 +101,16 @@ export class StaticAnalyzer {
     this.globalScope.define('string.join', AviatorType.Any);
     this.globalScope.define('string.replace_first', AviatorType.Any);
     this.globalScope.define('string.replace_all', AviatorType.Any);
+    this.builtinsReturnType.set('string.contains', AviatorType.Boolean);
+    this.builtinsReturnType.set('string.length', AviatorType.Long);
+    this.builtinsReturnType.set('string.startsWith', AviatorType.Boolean);
+    this.builtinsReturnType.set('string.endsWith', AviatorType.Boolean);
+    this.builtinsReturnType.set('string.substring', AviatorType.String);
+    this.builtinsReturnType.set('string.indexOf', AviatorType.Long);
+    this.builtinsReturnType.set('string.split', AviatorType.List); // array of strings
+    this.builtinsReturnType.set('string.join', AviatorType.String);
+    this.builtinsReturnType.set('string.replace_first', AviatorType.String);
+    this.builtinsReturnType.set('string.replace_all', AviatorType.String);
 
     // math.*
     this.globalScope.define('math.abs', AviatorType.Any);
@@ -90,6 +129,22 @@ export class StaticAnalyzer {
     this.globalScope.define('math.asin', AviatorType.Any);
     this.globalScope.define('Math_max', AviatorType.Any);
     this.globalScope.define('Math_min', AviatorType.Any);
+    this.builtinsReturnType.set('math.abs', AviatorType.Double);
+    this.builtinsReturnType.set('math.round', AviatorType.Long);
+    this.builtinsReturnType.set('math.floor', AviatorType.Double); // JS returns number
+    this.builtinsReturnType.set('math.ceil', AviatorType.Double);
+    this.builtinsReturnType.set('math.sqrt', AviatorType.Double);
+    this.builtinsReturnType.set('math.pow', AviatorType.Double);
+    this.builtinsReturnType.set('math.log', AviatorType.Double);
+    this.builtinsReturnType.set('math.log10', AviatorType.Double);
+    this.builtinsReturnType.set('math.sin', AviatorType.Double);
+    this.builtinsReturnType.set('math.cos', AviatorType.Double);
+    this.builtinsReturnType.set('math.tan', AviatorType.Double);
+    this.builtinsReturnType.set('math.atan', AviatorType.Double);
+    this.builtinsReturnType.set('math.acos', AviatorType.Double);
+    this.builtinsReturnType.set('math.asin', AviatorType.Double);
+    this.builtinsReturnType.set('Math_max', AviatorType.Double);
+    this.builtinsReturnType.set('Math_min', AviatorType.Double);
 
     // Predicates seq.eq etc are higher order functions that return predicates?
     // In Aviator runtime implementation here: 'seq.eq': (val) => (x) => x === val
@@ -102,6 +157,14 @@ export class StaticAnalyzer {
     this.globalScope.define('seq.le', AviatorType.Any);
     this.globalScope.define('seq.nil', AviatorType.Any);
     this.globalScope.define('seq.exists', AviatorType.Any);
+    this.builtinsReturnType.set('seq.eq', AviatorType.Any);
+    this.builtinsReturnType.set('seq.neq', AviatorType.Any);
+    this.builtinsReturnType.set('seq.gt', AviatorType.Any);
+    this.builtinsReturnType.set('seq.ge', AviatorType.Any);
+    this.builtinsReturnType.set('seq.lt', AviatorType.Any);
+    this.builtinsReturnType.set('seq.le', AviatorType.Any);
+    this.builtinsReturnType.set('seq.nil', AviatorType.Any);
+    this.builtinsReturnType.set('seq.exists', AviatorType.Any);
   }
 
   public analyze(code: string): Diagnostic[] {
@@ -131,24 +194,24 @@ export class StaticAnalyzer {
     } catch (e: any) {
       // Catch syntax errors from Parser
       // Parser error messages might contain line info, but if not, we default to 0
-      
+
       let line = 0;
       if (e instanceof ParseError && e.token && e.token.line) {
-          line = e.token.line;
+        line = e.token.line;
       } else if (e.token && e.token.line) {
-          // Fallback for duck typing if instance check fails (e.g. version mismatch)
-          line = e.token.line;
+        // Fallback for duck typing if instance check fails (e.g. version mismatch)
+        line = e.token.line;
       } else {
-          // Try to regex extract line number from message "line=X" or "at line X" as last resort
-          const match = e.message.match(/(?:line[=:]\s?|at\s+)(\d+)/);
-          if (match) {
-              line = parseInt(match[1]);
-          } else if (e.line) {
-              line = e.line;
-          }
+        // Try to regex extract line number from message "line=X" or "at line X" as last resort
+        const match = e.message.match(/(?:line[=:]\s?|at\s+)(\d+)/);
+        if (match) {
+          line = parseInt(match[1]);
+        } else if (e.line) {
+          line = e.line;
+        }
       }
-      
-      this.addError(e.message, line); 
+
+      this.addError(e.message, line);
     }
     return this.diagnostics;
   }
@@ -274,17 +337,30 @@ export class StaticAnalyzer {
     }
     if (expr instanceof FunctionCall) {
       // Check function existence
-      const funcType = this.analyzeExpr(expr.func, scope);
-      if(funcType !== AviatorType.Any) {
-        this.addError(`Function '${(expr.func as Leaf)?.token?.lexeme ?? 'unknown'}' is not defined`, this.getLine(expr.func));
-        return AviatorType.Any;
-      }
+      this.analyzeExpr(expr.func, scope);
 
       // Analyze args
       for (const arg of expr.args) {
         this.analyzeExpr(arg, scope);
       }
-      // For now, return Any for function calls as we don't track return types signature
+
+      // check builtin function return type
+      const funcName = this.buildFullNameIfLeaf(expr.func);
+      if (!funcName) {
+        return AviatorType.Any;
+      }
+
+      // resolve func
+      const funcType = scope.resolve(funcName);
+      if (!funcType) {
+        this.addError(`Undefined function '${funcName}'`, this.getLine(expr));
+        return AviatorType.Any;
+      }
+
+      const funcReturnType = this.builtinsReturnType.get(funcName);
+      if (funcReturnType) {
+        return funcReturnType;
+      }
       return AviatorType.Any;
     }
     if (expr instanceof LambdaFunction) {

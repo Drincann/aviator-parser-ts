@@ -74,13 +74,21 @@ describe('Static Analyzer', () => {
         assert.match(diagnostics[0].message, /Undefined variable 'b'/);
     });
 
-    // let a = math.abs(1, 2);
     it('Should detect builtin function calls', () => {
         const analyzer = new StaticAnalyzer();
         const code = `let a = math.abs(1, 2);`;
         
         const diagnostics = analyzer.analyze(code);
         assert.strictEqual(diagnostics.length, 0);
+    });
+
+    it('Should track builtin function return type', () => {
+        const analyzer = new StaticAnalyzer();
+        const code = `let a = math.abs(1, 2) && true;`;
+        
+        const diagnostics = analyzer.analyze(code);
+        assert.strictEqual(diagnostics.length, 1);
+        assert.match(diagnostics[0].message, /Left operand of '&&' must be boolean, got double/);
     });
 });
 
