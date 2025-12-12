@@ -10,10 +10,12 @@ export class ControlFlowSignal {
 export interface Stmt {
     execute(interpreter: any): any;
     hasSemicolon?: boolean; // Track if statement ends with semicolon
+    type?: string; // Statement type identifier (for minification-safe type checking)
 }
 
 // Expression statement (an expression used as a statement)
 export class ExprStmt implements Stmt {
+    public readonly type = 'ExprStmt';
     public hasSemicolon: boolean = false;
     
     constructor(public expr: Expr, hasSemicolon: boolean = false) {
@@ -29,6 +31,7 @@ export class ExprStmt implements Stmt {
 
 // Let statement: let x = expr
 export class LetStmt implements Stmt {
+    public readonly type = 'LetStmt';
     constructor(public name: Token, public initializer: Expr) {}
     execute(interpreter: any): any {
         const value = interpreter.evaluate(this.initializer);
@@ -39,6 +42,7 @@ export class LetStmt implements Stmt {
 
 // If statement: if cond { then } elsif cond2 { then2 } else { else }
 export class IfStmt implements Stmt {
+    public readonly type = 'IfStmt';
     constructor(
         public condition: Expr,
         public thenBranch: Stmt[],
@@ -64,6 +68,7 @@ export class IfStmt implements Stmt {
 
 // While statement: while cond { body }
 export class WhileStmt implements Stmt {
+    public readonly type = 'WhileStmt';
     constructor(public condition: Expr, public body: Stmt[]) {}
     
     execute(interpreter: any): any {
@@ -89,6 +94,7 @@ export class WhileStmt implements Stmt {
 
 // For statement: for item in seq { body }
 export class ForStmt implements Stmt {
+    public readonly type = 'ForStmt';
     constructor(
         public indexVar: Token | null, // optional index/key variable
         public itemVar: Token,
@@ -149,6 +155,7 @@ export class ForStmt implements Stmt {
 
 // Function definition: fn name(params) { body }
 export class FnStmt implements Stmt {
+    public readonly type = 'FnStmt';
     constructor(
         public name: Token,
         public params: Token[],
@@ -164,6 +171,7 @@ export class FnStmt implements Stmt {
 
 // Return statement: return expr
 export class ReturnStmt implements Stmt {
+    public readonly type = 'ReturnStmt';
     constructor(public value: Expr | null) {}
     execute(interpreter: any): any {
         const val = this.value ? interpreter.evaluate(this.value) : null;
@@ -173,6 +181,7 @@ export class ReturnStmt implements Stmt {
 
 // Break statement
 export class BreakStmt implements Stmt {
+    public readonly type = 'BreakStmt';
     execute(interpreter: any): any {
         return new ControlFlowSignal('break');
     }
@@ -180,6 +189,7 @@ export class BreakStmt implements Stmt {
 
 // Continue statement
 export class ContinueStmt implements Stmt {
+    public readonly type = 'ContinueStmt';
     execute(interpreter: any): any {
         return new ControlFlowSignal('continue');
     }
@@ -187,6 +197,7 @@ export class ContinueStmt implements Stmt {
 
 // Block statement: { stmts }
 export class BlockStmt implements Stmt {
+    public readonly type = 'BlockStmt';
     constructor(public statements: Stmt[]) {}
     execute(interpreter: any): any {
         return interpreter.executeBlock(this.statements);
@@ -195,6 +206,7 @@ export class BlockStmt implements Stmt {
 
 // Throw statement: throw expr
 export class ThrowStmt implements Stmt {
+    public readonly type = 'ThrowStmt';
     constructor(public value: Expr) {}
     execute(interpreter: any): any {
         const exception = interpreter.evaluate(this.value);
@@ -202,6 +214,7 @@ export class ThrowStmt implements Stmt {
     }
 }
 export class TryStmt implements Stmt {
+    public readonly type = 'TryStmt';
     constructor(
         public tryBlock: Stmt[],
         public catchVar: Token | null,

@@ -223,9 +223,10 @@ export class StaticAnalyzer {
   }
 
   private analyzeStmt(stmt: any, scope: SymbolTable) {
-    const stmtName = stmt.constructor.name;
+    // Use type property instead of constructor.name to avoid minification issues
+    const stmtType = stmt.type || stmt.constructor.name;
 
-    switch (stmtName) {
+    switch (stmtType) {
       case 'LetStmt': {
         // let a = 1;
         // stmt.name: Token, stmt.initializer: Expr
